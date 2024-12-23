@@ -5,6 +5,9 @@ const cors = require('cors');
 const axios = require('axios');
 const app = express();
 
+const rateLimit = require('express-rate-limit');
+
+
 // Get API Key from environment variable
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
