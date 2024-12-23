@@ -67,7 +67,7 @@ app.post('/extract-keywords', async (req, res) => {
         return res.status(400).json({ error: 'Text input is required.' });
     }
 
-    if (!process.env.GOOGLE_EXTRACTOR_API_KEY) {
+    if (!GOOGLE_EXTRACTOR_API_KEY) {
         console.error('Google Extractor API Key is not set.');
         return res.status(500).json({ error: 'Server configuration error.' });
     }
