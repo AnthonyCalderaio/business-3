@@ -37,6 +37,14 @@ app.use(cors({
 
 
 
+// Middleware to parse JSON for all routes except /webhook
+app.use((req, res, next) => {
+    if (req.originalUrl === '/webhook') {
+        next(); // Skip JSON parsing for /webhook
+    } else {
+        express.json()(req, res, next); // Apply JSON parsing
+    }
+});
 
 
 const limiter = rateLimit({
