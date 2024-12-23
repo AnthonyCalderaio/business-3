@@ -59,6 +59,8 @@ app.post('/extract-keywords', async (req, res) => {
 
     console.log('process.env:');
     console.log(process.env)
+    console.log('actual variable:')
+    console.log(GOOGLE_EXTRACTOR_API_KEY)
 
     if (!text) {
         console.log('No text provided.');
