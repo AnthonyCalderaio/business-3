@@ -7,13 +7,15 @@ const app = express();
 
 // Get API Key from environment variable
 const API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
-const stripe = require('stripe')('YOUR_STRIPE_SECRET_KEY');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripeWebookSecret = process.env.WEBHOOK_SECRET; // Replace with your webhook secret
+
 
 app.use(express.json()); // Parse request body as JSON
 
 // CORS setup
 const allowedOrigins = [
-    '', // Your Netlify URL
+    'https://keyword-extractor-plus.netlify.app', // Your Netlify URL
     'http://localhost:4200', // Local testing URL (if you're working locally)
 ];
 
@@ -74,6 +76,32 @@ app.post('/extract-keywords', async (req, res) => {
     }
 });
 
+
+
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const payload = req.body;
+
+  try {
+    // Verify the event with Stripe
+    const event = stripe.webhooks.constructEvent(payload, sig, stripeWebookSecret);
+
+    // Handle the event (e.g., checkout.session.completed)
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const userId = session.customer; // Get the Stripe customer ID from the session
+
+      // Update user status or take other actions
+      console.log(`Payment successful for user: ${userId}`);
+    }
+
+    res.status(200).send('Event received');
+  } catch (error) {
+    console.error('Error handling webhook event:', error);
+    res.status(400).send('Webhook Error');
+  }
+});
+
 app.post('/create-customer', async (req, res) => {
     const { email, name } = req.body; // The user's email and name sent from the frontend
 
@@ -123,33 +151,6 @@ app.post('/create-checkout-session', async (req, res) => {
     } catch (error) {
         console.error('Error creating checkout session:', error);
         res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-
-app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const payload = req.body;
-
-    try {
-        const event = stripe.webhooks.constructEvent(payload, sig, endpointSecret);
-
-        // Handle the event
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object;
-
-            // Do something with the session (e.g., mark user as "premium")
-            const userId = session.customer; // You can get the user ID from the session data
-            // Update the user's status in your database to "premium" or whatever you want
-            console.log(`Payment successful for user: ${userId}`);
-
-            // Optionally, update the user's subscription or payment status
-            // Example: mark the user as having a "premium" subscription in your database
-        }
-
-        res.status(200).send('Event received');
-    } catch (error) {
-        console.error('Error handling webhook event:', error);
-        res.status(400).send('Webhook Error');
     }
 });
 

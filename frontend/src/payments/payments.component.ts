@@ -14,7 +14,7 @@ export class PaymentsComponent {
 
   checkout() {
     // Use the Stripe instance (loaded from the script in index.html)
-    const stripe = Stripe(''); // Replace with your Stripe publishable key
+    const stripe = Stripe('pk_test_51QZ0AuDj4emn7zxBsgePa5u6pljDu874fym798khfLn4Irg6Of0BXuX1Y3CAjn573FB1EemQCA2RIUngUega2ABd00J3rM1bfM'); // Replace with your Stripe publishable key
 
     // Call your backend to create the checkout session
     fetch('/create-checkout-session', {
