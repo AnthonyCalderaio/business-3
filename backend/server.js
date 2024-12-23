@@ -79,33 +79,7 @@ app.post('/extract-keywords', async (req, res) => {
 
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
   const sig = req.headers['stripe-signature'];
-
-  try {
-        // Verify the Stripe signature
-        const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-
-        // Handle the event type
-        switch (event.type) {
-            case 'payment_intent.succeeded':
-                const paymentIntent = event.data.object;
-                console.log('PaymentIntent was successful!', paymentIntent);
-                // Add your business logic here (e.g., update user subscription status)
-                break;
-            case 'payment_intent.payment_failed':
-                const failedIntent = event.data.object;
-                console.error('Payment failed:', failedIntent);
-                // Handle payment failure
-                break;
-            case 'charge.succeeded':
-                const charge = event.data.object;
-                console.log('Charge successful!', charge);
-                // Handle successful charge (if needed)
-                break;
-            default:
-                console.log(`Unhandled event type: ${event.type}`);
-    }
-
-        // Respond to Stripe to acknowledge receipt of the event
+        const event = stripe.webhooks.constructEvent(req.body, sig, stripeWebookSecret);
         res.status(200).send('Received');
     } catch (err) {
         console.error(`Webhook Error: ${err.message}`);
