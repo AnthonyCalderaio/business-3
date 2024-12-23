@@ -36,7 +36,6 @@ app.use(cors({
 }));
 
 
-
 // Middleware to parse JSON for all routes except /webhook
 app.use((req, res, next) => {
     if (req.originalUrl === '/webhook') {
