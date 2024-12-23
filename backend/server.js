@@ -6,7 +6,7 @@ const axios = require('axios');
 const app = express();
 
 // Get API Key from environment variable
-const API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
+const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const stripeWebookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const frontendUrl = process.env.FRONTEND_URL
@@ -36,11 +36,9 @@ app.use(cors({
 
 
 
-const rateLimit = require('express-rate-limit');
-
 const limiter = rateLimit({
-    windowMs: 60 * 60 * 1000,  // 1 hour
-    max: 100,  // Limit to 100 requests per hour
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 100, // Limit to 100 requests per hour
     message: "Too many requests from this IP, please try again after an hour."
 });
 
@@ -50,11 +48,17 @@ app.post('/extract-keywords', async (req, res) => {
     const { text } = req.body;
 
     if (!text) {
+        console.log('No text provided.');
         return res.status(400).json({ error: 'Text input is required.' });
     }
 
+    if (!process.env.GOOGLE_EXTRACTOR_API_KEY) {
+        console.error('Google Extractor API Key is not set.');
+        return res.status(500).json({ error: 'Server configuration error.' });
+    }
+
     try {
-        const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${API_KEY}`;
+        const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
         const response = await axios.post(endpoint, {
             document: {
                 content: text,
@@ -63,8 +67,8 @@ app.post('/extract-keywords', async (req, res) => {
         });
 
         const keywords = response.data.entities
-            .filter(entity => entity.salience > 0.1) // Filter out low salience entities (adjust threshold as needed)
-            .map((entity) => ({
+            .filter(entity => entity.salience > 0.1) // Filter out low salience entities
+            .map(entity => ({
                 name: entity.name,
                 type: entity.type,
                 salience: entity.salience,
@@ -72,17 +76,20 @@ app.post('/extract-keywords', async (req, res) => {
 
         res.status(200).json({ success: true, keywords });
     } catch (error) {
-        console.error('Error analyzing text:', error.response?.data || error.message);
+        console.error('Error analyzing text:', error.response?.data || error.message || 'Unknown error');
         res.status(500).json({ error: 'Failed to extract keywords.' });
     }
 });
 
 
 
+
+
+
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     console.log('Raw body:', req.body);  // Should be a Buffer object
     console.log('Headers:', req.headers);  // Should contain stripe-signature
-  const sig = req.headers['stripe-signature'];
+    const sig = req.headers['stripe-signature'];
     console.log('Stripe Signature:', sig);  // Check if the signature is there
 
     try {
