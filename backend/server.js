@@ -7,6 +7,8 @@ const app = express();
 
 // Get API Key from environment variable
 const API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripeWebookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const frontendUrl = process.env.FRONTEND_URL
 
 
