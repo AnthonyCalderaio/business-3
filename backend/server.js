@@ -57,6 +57,9 @@ app.use('/extract-keywords', limiter); // Apply rate limiter to the API endpoint
 app.post('/extract-keywords', async (req, res) => {
     const { text } = req.body;
 
+    console.log('process.env:');
+    console.log(process.env)
+
     if (!text) {
         console.log('No text provided.');
         return res.status(400).json({ error: 'Text input is required.' });
