@@ -8,7 +8,7 @@ const app = express();
 // Get API Key from environment variable
 const API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const stripeWebookSecret = process.env.WEBHOOK_SECRET; // Replace with your webhook secret
+const stripeWebookSecret = process.env.STRIPE_WEBHOOK_SECRET; // Replace with your webhook secret
 
 
 app.use(express.json()); // Parse request body as JSON
