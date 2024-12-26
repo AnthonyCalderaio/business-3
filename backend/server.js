@@ -102,22 +102,45 @@ app.post('/extract-keywords', async (req, res) => {
 
 
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-    console.log('Raw body:', req.body);  // Should be a Buffer object
-    console.log('Headers:', req.headers);  // Should contain stripe-signature
     const sig = req.headers['stripe-signature'];
-    console.log('Stripe Signature:', sig);  // Check if the signature is there
-
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  
+    let event;
+  
     try {
-        const event = stripe.webhooks.constructEvent(req.body, sig, stripeWebookSecret);
-        console.log('Event verified successfully:', event);
-        res.status(200).send('Received');
+      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
-        console.error('Error verifying webhook signature:', err);
-        res.status(400).send('Webhook error: ' + err.message);
-  }
+      console.error(`Webhook signature verification failed: ${err.message}`);
+      return res.status(400).send(`Webhook error: ${err.message}`);
+    }
+  
+    // Handle the event
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        const paymentIntent = event.data.object;
+        console.log(`PaymentIntent was successful!`);
+        break;
+      // Handle other event types
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+  
+    res.json({ received: true });
 });
 
+app.post('/create-payment-intent', async (req, res) => {
+const { amount } = req.body;
 
+try {
+    const paymentIntent = await stripe.paymentIntents.create({
+    amount,
+    currency: 'usd',
+    });
+    res.send({ clientSecret: paymentIntent.client_secret });
+} catch (error) {
+    res.status(500).send({ error: error.message });
+}
+});
 
 app.post('/create-customer', async (req, res) => {
     const { email, name } = req.body; // The user's email and name sent from the frontend

@@ -1,0 +1,45 @@
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    text-align: center;
+  
+    textarea {
+      width: 100%;
+      margin-bottom: 10px;
+      font-size: 16px;
+      padding: 10px;
+    }
+  
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  
+    .loading {
+      margin: 10px 0;
+      color: blue;
+    }
+  
+    .error {
+      margin: 10px 0;
+      color: red;
+    }
+  
+    table {
+      margin-top: 20px;
+      width: 100%;
+      border-collapse: collapse;
+  
+      th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+      }
+  
+      th {
+        background-color: #f4f4f4;
+      }
+    }
+  }
+  

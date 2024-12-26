@@ -1,0 +1,32 @@
+<div class="container">
+    <h1>Keyword Extractor</h1>
+  
+    <!-- Input Area -->
+    <textarea [(ngModel)]="inputText" placeholder="Paste your content here..." rows="6"></textarea>
+    <button (click)="extractKeywords()" [disabled]="isLoading">Extract Keywords</button>
+  
+    <!-- Loading State -->
+    <div *ngIf="isLoading" class="loading">Extracting keywords...</div>
+  
+    <!-- Error Message -->
+    <div *ngIf="errorMessage" class="error">{{ errorMessage }}</div>
+  
+    <!-- Keywords Table -->
+    <table *ngIf="keywords.length > 0">
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th>Type</th>
+          <th>Salience</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let keyword of keywords">
+          <td>{{ keyword.name }}</td>
+          <td>{{ keyword.type }}</td>
+          <td>{{ keyword.salience | number: '1.2-2' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  

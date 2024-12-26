@@ -1,4 +1,7 @@
 import { Component } from '@angular/core';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+import { HttpClient } from '@angular/common/http';
 
 declare var Stripe: any; // Declare Stripe as a global variable
 
@@ -10,7 +13,10 @@ declare var Stripe: any; // Declare Stripe as a global variable
   styleUrl: './payments.component.scss'
 })
 export class PaymentsComponent {
-  constructor() {}
+
+  apiUrl = environment.backendUrl; 
+
+  constructor(private http: HttpClient) {}
 
   checkout() {
     // Use the Stripe instance (loaded from the script in index.html)
@@ -30,6 +36,10 @@ export class PaymentsComponent {
       .catch((error) => {
         console.error('Error during checkout:', error);
       });
+  }
+
+  createPaymentIntent(amount: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/create-payment-intent`, { amount });
   }
 
 }
