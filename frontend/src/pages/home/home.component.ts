@@ -3,6 +3,7 @@ import { environment } from '../../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-home',
@@ -19,7 +20,7 @@ export class HomeComponent {
   errorMessage: string = '';
   apiUrl = environment.backendUrl; 
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private authService: AuthService) {}
 
   extractKeywords(): void {
     if (!this.inputText.trim()) {
@@ -41,5 +42,9 @@ export class HomeComponent {
           this.isLoading = false;
         }
       });
+  }
+
+  logout(){
+    this.authService.logout();
   }
 }
