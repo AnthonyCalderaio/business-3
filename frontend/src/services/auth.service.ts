@@ -48,6 +48,13 @@ export class AuthService {
     return of(null);
   }
 
+  getUser(): Observable<any>{
+    return this.auth0.user$;
+  }
+
+  getToken(): Observable<any>{
+    return this.auth0.idTokenClaims$
+  }
   /** Handle Auth0 callback */
   handleAuthCallback() {
     if (this.isBrowser()) {

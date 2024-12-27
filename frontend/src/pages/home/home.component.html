@@ -33,4 +33,6 @@
 
   <div>
     <span (click)="logout()">Logout</span>
+    <button (click)="purchasePremium()">Purchase Premium</button>
+    <app-payments [tokenSub]="token.sub" [userProfile]="user"></app-payments>
   </div>

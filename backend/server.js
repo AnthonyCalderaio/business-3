@@ -12,7 +12,9 @@ const rateLimit = require('express-rate-limit');
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const stripeWebookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const frontendUrl = process.env.FRONTEND_URL
+const frontendUrl = process.env.FRONTEND_URL;
+const auth0Domain = process.env.AUTH0_DOMAIN;
+const auth0ManagementToken = process.env.AUTH0_MANAGEMENT_TOKEN;
 
 
 // app.use(express.json()); // Parse request body as JSON
@@ -57,10 +59,6 @@ app.use('/extract-keywords', limiter); // Apply rate limiter to the API endpoint
 app.post('/extract-keywords', async (req, res) => {
     const { text } = req.body;
 
-    console.log('process.env:');
-    console.log(process.env)
-    console.log('actual variable:')
-    console.log(GOOGLE_EXTRACTOR_API_KEY)
 
     if (!text) {
         console.log('No text provided.');
@@ -97,13 +95,33 @@ app.post('/extract-keywords', async (req, res) => {
 });
 
 
+async function updateAuth0User(auth0Sub, stripeCustomerId) {// The token you created for the Management API
+    const url = `https://${auth0Domain}/api/v2/users/${auth0Sub}`;
+  
+    try {
+      const response = await axios.patch(url, {
+        app_metadata: {
+          stripeCustomerId: stripeCustomerId  // Save the Stripe customer ID
+        }
+      }, {
+        headers: {
+          Authorization: `Bearer ${auth0ManagementToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+  
+      console.log('Auth0 user updated:', response.data);
+    } catch (error) {
+      console.error('Error updating Auth0 user:', error.response?.data || error.message);
+    }
+  }
 
 
 
 
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const endpointSecret = stripeWebookSecret;
   
     let event;
   
@@ -163,62 +181,54 @@ app.post('/create-customer', async (req, res) => {
 });
 
 app.post('/create-checkout-session', async (req, res) => {
-    const { customerId } = req.body; // Get customer ID from the frontend (you should pass this when the user clicks on "Pay")
-
+    const { customerId, user } = req.body; // Get customer ID (Auth0 sub) and the whole user object
+  
     try {
-        // Create a Checkout session
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            line_items: [
-                {
-                    price_data: {
-                        currency: 'usd', // Or your preferred currency
-                        product_data: {
-                            name: 'Premium Subscription', // The name of your product
-                        },
-                        unit_amount: 999, // The price in cents (e.g., $9.99)
-                    },
-                    quantity: 1,
-                },
-            ],
-            mode: 'payment', // Payment mode
-            success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${frontendUrl}/cancel`,
-            customer: customerId, // Pass the Stripe customer ID here to associate with the payment
+      let stripeCustomerId = customerId;  // Use Auth0 sub to identify the user
+  
+      if (!user?.app_metadata?.stripeCustomerId) {
+        // If the user doesn't have a Stripe customer ID, create a new Stripe customer
+        const customer = await stripe.customers.create({
+          email: user.email,  // Use the email from the user object
+          name: user.name,    // Use the name from the user object
         });
-
-        res.json({ sessionId: session.id }); // Send the session ID to the frontend
-    } catch (error) {
-        console.error('Error creating checkout session:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-
-
-app.post('/create-checkout-session', async (req, res) => {
-    const YOUR_DOMAIN = 'http://localhost:3000'; // Update to your live URL
-
-    const session = await stripe.checkout.sessions.create({
+  
+        // Store the Stripe customer ID in Auth0 (in app_metadata)
+        stripeCustomerId = customer.id;
+  
+        // Update Auth0 user with the new Stripe customer ID
+        await updateAuth0User(customerId, stripeCustomerId);
+      }
+  
+      // Now create the Stripe checkout session
+      const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: [
-            {
-                price_data: {
-                    currency: 'usd',
-                    product_data: {
-                        name: 'Premium Subscription',
-                    },
-                    unit_amount: 5000, // Example: $50 for subscription
-                },
-                quantity: 1,
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: 'Premium Subscription',
+              },
+              unit_amount: 999, // Price in cents
             },
+            quantity: 1,
+          },
         ],
-        mode: 'subscription',
-        success_url: `${YOUR_DOMAIN}/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${YOUR_DOMAIN}/cancel`,
-    });
-
-    res.redirect(303, session.url);
-});
+        mode: 'payment',
+        success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${frontendUrl}/cancel`,
+        customer: stripeCustomerId,  // Use the correct Stripe customer ID
+      });
+  
+      res.json({ sessionId: session.id });  // Send session ID back to frontend
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+  
+  
 
 
 app.use('/premium/*', (req, res, next) => {
