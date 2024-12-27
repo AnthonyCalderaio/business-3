@@ -33,7 +33,7 @@ export class AuthService {
   /** Logout using Auth0 */
   logout() {
     if (this.isBrowser()) {
-      this.auth0.logout({ logoutParams: { returnTo: window.location.origin } });
+      this.auth0.logout({ logoutParams: { returnTo: 'https://keyword-extractor-plus.netlify.app/login'  } });
     } else {
       console.warn('Attempted logout in a non-browser environment.');
     }
