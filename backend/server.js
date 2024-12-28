@@ -11,10 +11,11 @@ const rateLimit = require('express-rate-limit');
 // Get API Key from environment variable
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const stripeWebookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const frontendUrl = process.env.FRONTEND_URL;
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const auth0ManagementToken = process.env.AUTH0_MANAGEMENT_TOKEN;
+console.log(process.env)
 
 
 // app.use(express.json()); // Parse request body as JSON
@@ -94,7 +95,7 @@ app.post('/extract-keywords', async (req, res) => {
     }
 });
 
-
+// Add `stripeCustomerId` to auth0 metadata
 async function updateAuth0User(auth0Sub, stripeCustomerId) {// The token you created for the Management API
     const url = `https://${auth0Domain}/api/v2/users/${auth0Sub}`;
   
@@ -121,7 +122,7 @@ async function updateAuth0User(auth0Sub, stripeCustomerId) {// The token you cre
 
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const endpointSecret = stripeWebookSecret;
+    const endpointSecret = stripeWebhookSecret;
   
     let event;
   
