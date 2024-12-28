@@ -12,7 +12,9 @@ const rateLimit = require('express-rate-limit');
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const frontendUrl = process.env.FRONTEND_URL;
+const frontendUrl = process.env.NODE_ENV === 'production'
+    ? process.env.FRONTEND_URL
+    : 'http://localhost:4200';
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const auth0ManagementToken = process.env.AUTH0_MANAGEMENT_TOKEN;
 console.log(process.env)
@@ -200,7 +202,7 @@ app.post('/create-checkout-session', async (req, res) => {
         // Update Auth0 user with the new Stripe customer ID
         await updateAuth0User(customerId, stripeCustomerId);
       }
-  
+
       // Now create the Stripe checkout session
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
