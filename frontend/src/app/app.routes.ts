@@ -5,6 +5,7 @@ import { AuthService } from '@auth0/auth0-angular';
 import { map } from 'rxjs';
 import { HomeComponent } from '../pages/home/home.component';
 import { AuthGuard } from '../guards/auth.guard';
+import { SuccessComponent } from '../pages/success/success.component';
 
 export const routes: Routes = [
     {
@@ -35,5 +36,9 @@ export const routes: Routes = [
     {
       path: '**',
       redirectTo: 'login', // Redirect to login if no matching routes
+    },
+    { 
+      path: 'success', 
+      component: SuccessComponent 
     },
   ];
