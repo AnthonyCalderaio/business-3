@@ -32,7 +32,7 @@
   
 
   <div>
+    <div *ngIf="user?.isPremium">Premium Member!</div>
     <span (click)="logout()">Logout</span>
-    <button (click)="purchasePremium()">Purchase Premium</button>
-    <app-payments [tokenSub]="token.sub" [userProfile]="user"></app-payments>
+    <app-payments *ngIf="!user?.isPremium" [tokenSub]="token.sub" [userProfile]="user"></app-payments>
   </div>

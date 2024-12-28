@@ -12,9 +12,7 @@ const rateLimit = require('express-rate-limit');
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const frontendUrl = process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
-    : 'http://localhost:4200';
+const frontendUrl = process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : 'http://localhost:4200';
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const auth0ManagementToken = process.env.AUTH0_MANAGEMENT_TOKEN;
 console.log(process.env)
@@ -122,32 +120,88 @@ async function updateAuth0User(auth0Sub, stripeCustomerId) {// The token you cre
 
 
 
-app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+// app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+//     const sig = req.headers['stripe-signature'];
+//     const endpointSecret = stripeWebhookSecret;
+  
+//     let event;
+  
+//     try {
+//       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+//     } catch (err) {
+//       console.error(`Webhook signature verification failed: ${err.message}`);
+//       return res.status(400).send(`Webhook error: ${err.message}`);
+//     }
+  
+//     // Handle the event
+//     switch (event.type) {
+//       case 'payment_intent.succeeded':
+//         const paymentIntent = event.data.object;
+//         console.log(`PaymentIntent was successful!`);
+//         break;
+//       // Handle other event types
+//       default:
+//         console.log(`Unhandled event type ${event.type}`);
+//     }
+  
+//     res.json({ received: true });
+// });
+
+app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = stripeWebhookSecret;
-  
+
     let event;
-  
+
     try {
-      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
-      console.error(`Webhook signature verification failed: ${err.message}`);
-      return res.status(400).send(`Webhook error: ${err.message}`);
+        console.error(`Webhook signature verification failed: ${err.message}`);
+        return res.status(400).send(`Webhook error: ${err.message}`);
     }
-  
+
     // Handle the event
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        const paymentIntent = event.data.object;
-        console.log(`PaymentIntent was successful!`);
-        break;
-      // Handle other event types
-      default:
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object; // Stripe session object
+        const stripeCustomerId = session.customer; // Stripe Customer ID
+
+        try {
+            // Query Auth0 user by Stripe Customer ID
+            const url = `https://${auth0Domain}/api/v2/users?q=app_metadata.stripeCustomerId:"${stripeCustomerId}"&search_engine=v3`;
+            const response = await axios.get(url, {
+                headers: {
+                    Authorization: `Bearer ${auth0ManagementToken}`,
+                },
+            });
+
+            const user = response.data[0]; // Assuming unique Stripe Customer ID
+            if (user) {
+                // Update Auth0 user with "premium" status
+                await axios.patch(
+                    `https://${auth0Domain}/api/v2/users/${user.user_id}`,
+                    { app_metadata: { isPremium: true } },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${auth0ManagementToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                    }
+                );
+                console.log(`Premium status added to user: ${user.user_id}`);
+            } else {
+                console.error('No Auth0 user found with the given Stripe Customer ID.');
+            }
+        } catch (error) {
+            console.error('Error updating Auth0 user:', error.response?.data || error.message);
+        }
+    } else {
         console.log(`Unhandled event type ${event.type}`);
     }
-  
+
     res.json({ received: true });
 });
+
+
 
 app.post('/create-payment-intent', async (req, res) => {
 const { amount } = req.body;
@@ -232,6 +286,28 @@ app.post('/create-checkout-session', async (req, res) => {
   });
   
   
+
+  app.get('/check-subscription/:stripeCustomerId', async (req, res) => {
+    const { stripeCustomerId } = req.params;
+  
+    try {
+        // Retrieve the customer's subscriptions from Stripe
+        const subscriptions = await stripe.subscriptions.list({
+            customer: stripeCustomerId,
+            status: 'active',  // You can check for active subscriptions only
+            limit: 1
+        });
+
+        // Check if the user has any active subscriptions
+        const isPremium = subscriptions.data.length > 0;
+
+        // Respond with the subscription status
+        res.status(200).json({ isPremium });
+    } catch (error) {
+        console.error('Error checking subscription:', error.message);
+        res.status(500).json({ error: 'Failed to check subscription.' });
+    }
+});
 
 
 app.use('/premium/*', (req, res, next) => {
