@@ -34,5 +34,5 @@
   <div>
     <div *ngIf="user?.isPremium">Premium Member!</div>
     <span (click)="logout()">Logout</span>
-    <app-payments *ngIf="!user?.isPremium" [tokenSub]="token.sub" [userProfile]="user"></app-payments>
+    <app-payments *ngIf="!user?.isPremium" [tokenSub]="token?.sub" [userProfile]="user"></app-payments>
   </div>

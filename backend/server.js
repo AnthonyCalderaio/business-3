@@ -3,22 +3,19 @@ require('dotenv').config(); // Load environment variables from .env file
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const jwt = require('jsonwebtoken');
 const app = express();
 
 const rateLimit = require('express-rate-limit');
 
-
-// Get API Key from environment variable
+// Load environment variables
 const GOOGLE_EXTRACTOR_API_KEY = process.env.GOOGLE_EXTRACTOR_KEY;
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const frontendUrl = process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : 'http://localhost:4200';
 const auth0Domain = process.env.AUTH0_DOMAIN;
-const auth0ManagementToken = process.env.AUTH0_MANAGEMENT_TOKEN;
-console.log(process.env)
-
-
-// app.use(express.json()); // Parse request body as JSON
+const auth0ClientId = process.env.AUTH0_CLIENT_ID;
+const auth0ClientSecret = process.env.AUTH0_CLIENT_SECRET;
 
 // CORS setup
 const allowedOrigins = [
@@ -38,7 +35,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-
 // Middleware to parse JSON for all routes except /webhook
 app.use((req, res, next) => {
     if (req.originalUrl === '/webhook') {
@@ -48,18 +44,34 @@ app.use((req, res, next) => {
     }
 });
 
-
+// Rate limit for the keyword extraction route
 const limiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 100, // Limit to 100 requests per hour
     message: "Too many requests from this IP, please try again after an hour."
 });
-
 app.use('/extract-keywords', limiter); // Apply rate limiter to the API endpoint
 
+// Function to fetch the Auth0 Management API token dynamically
+async function getAuth0ManagementToken() {
+    try {
+        const response = await axios.post(`https://${auth0Domain}/oauth/token`, {
+            client_id: auth0ClientId,
+            client_secret: auth0ClientSecret,
+            audience: `https://${auth0Domain}/api/v2/`,
+            grant_type: 'client_credentials',
+        });
+        return response.data.access_token;
+    } catch (error) {
+        console.error('Error fetching Auth0 Management token:', error.message);
+        throw new Error('Unable to get Auth0 Management token');
+    }
+}
+
+
+// Route to extract keywords
 app.post('/extract-keywords', async (req, res) => {
     const { text } = req.body;
-
 
     if (!text) {
         console.log('No text provided.');
@@ -95,57 +107,61 @@ app.post('/extract-keywords', async (req, res) => {
     }
 });
 
-// Add `stripeCustomerId` to auth0 metadata
-async function updateAuth0User(auth0Sub, stripeCustomerId) {// The token you created for the Management API
-    const url = `https://${auth0Domain}/api/v2/users/${auth0Sub}`;
+// Webhook to handle Stripe events
+async function updateAuth0User(auth0Sub, stripeCustomerId) {
+    try {
+        const auth0Token = await getAuth0ManagementToken();
+        const url = `https://${auth0Domain}/api/v2/users/${auth0Sub}`;
+        
+        const response = await axios.patch(url, {
+            app_metadata: {
+                stripeCustomerId: stripeCustomerId  // Save the Stripe customer ID
+            }
+        }, {
+            headers: {
+                Authorization: `Bearer ${auth0Token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log('Auth0 user updated:', response.data);
+    } catch (error) {
+        console.error('Error updating Auth0 user:', error.response?.data || error.message);
+    }
+}
+
+app.post('/api/user-metadata', async (req, res) => {
+    console.log('this got hit')
+    const userToken = req.body.token; // Token sent from frontend
+    console.log(userToken)
+  
+    if (!userToken) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
   
     try {
-      const response = await axios.patch(url, {
-        app_metadata: {
-          stripeCustomerId: stripeCustomerId  // Save the Stripe customer ID
-        }
-      }, {
+      // Decode the user token to extract user ID (sub)
+      const userId = userToken.sub;
+  
+      if (!userId) {
+        return res.status(400).json({ error: 'Invalid token' });
+      }
+  
+      // Fetch metadata using the Management API
+      const auth0Token = await getAuth0ManagementToken();  // Fetch the token dynamically
+      const url = `https://${auth0Domain}/api/v2/users/${userId}`;
+      const response = await axios.get(url, {
         headers: {
-          Authorization: `Bearer ${auth0ManagementToken}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${auth0Token}`, // Management API token
+        },
       });
   
-      console.log('Auth0 user updated:', response.data);
+      // Return the app_metadata to the frontend
+      res.status(200).json(response.data.app_metadata);
     } catch (error) {
-      console.error('Error updating Auth0 user:', error.response?.data || error.message);
+      console.error('Error fetching metadata:', error.response?.data || error.message);
+      res.status(500).json({ error: 'Failed to fetch metadata' });
     }
-  }
-
-
-
-
-// app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-//     const sig = req.headers['stripe-signature'];
-//     const endpointSecret = stripeWebhookSecret;
-  
-//     let event;
-  
-//     try {
-//       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-//     } catch (err) {
-//       console.error(`Webhook signature verification failed: ${err.message}`);
-//       return res.status(400).send(`Webhook error: ${err.message}`);
-//     }
-  
-//     // Handle the event
-//     switch (event.type) {
-//       case 'payment_intent.succeeded':
-//         const paymentIntent = event.data.object;
-//         console.log(`PaymentIntent was successful!`);
-//         break;
-//       // Handle other event types
-//       default:
-//         console.log(`Unhandled event type ${event.type}`);
-//     }
-  
-//     res.json({ received: true });
-// });
+  });
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -160,36 +176,36 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         return res.status(400).send(`Webhook error: ${err.message}`);
     }
 
-    // Handle the event
     if (event.type === 'checkout.session.completed') {
-        const session = event.data.object; // Stripe session object
-        const stripeCustomerId = session.customer; // Stripe Customer ID
+        const session = event.data.object;
+        const stripeCustomerId = session.customer;
 
         try {
-            // Query Auth0 user by Stripe Customer ID
+            // Query Auth0 by Stripe Customer ID
+            const auth0Token = await getAuth0ManagementToken();  // Fetch the token dynamically
             const url = `https://${auth0Domain}/api/v2/users?q=app_metadata.stripeCustomerId:"${stripeCustomerId}"&search_engine=v3`;
             const response = await axios.get(url, {
                 headers: {
-                    Authorization: `Bearer ${auth0ManagementToken}`,
+                    Authorization: `Bearer ${auth0Token}`,
                 },
             });
 
-            const user = response.data[0]; // Assuming unique Stripe Customer ID
+            const user = response.data[0];
             if (user) {
-                // Update Auth0 user with "premium" status
+                // Update isPremium status
                 await axios.patch(
                     `https://${auth0Domain}/api/v2/users/${user.user_id}`,
                     { app_metadata: { isPremium: true } },
                     {
                         headers: {
-                            Authorization: `Bearer ${auth0ManagementToken}`,
+                            Authorization: `Bearer ${auth0Token}`,
                             'Content-Type': 'application/json',
                         },
                     }
                 );
                 console.log(`Premium status added to user: ${user.user_id}`);
             } else {
-                console.error('No Auth0 user found with the given Stripe Customer ID.');
+                console.error('No Auth0 user found for the given Stripe Customer ID.');
             }
         } catch (error) {
             console.error('Error updating Auth0 user:', error.response?.data || error.message);
@@ -201,34 +217,30 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.json({ received: true });
 });
 
-
-
+// Create a payment intent for Stripe
 app.post('/create-payment-intent', async (req, res) => {
-const { amount } = req.body;
-
-try {
-    const paymentIntent = await stripe.paymentIntents.create({
-    amount,
-    currency: 'usd',
-    });
-    res.send({ clientSecret: paymentIntent.client_secret });
-} catch (error) {
-    res.status(500).send({ error: error.message });
-}
-});
-
-app.post('/create-customer', async (req, res) => {
-    const { email, name } = req.body; // The user's email and name sent from the frontend
+    const { amount } = req.body;
 
     try {
-        // Create a new customer in Stripe
-        const customer = await stripe.customers.create({
-            email: email,
-            name: name,
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount,
+            currency: 'usd',
         });
+        res.send({ clientSecret: paymentIntent.client_secret });
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
 
-        // You can now store the Stripe customer ID in your database
-        // For example: save customer.id to your user's profile in your DB
+// Create a Stripe customer
+app.post('/create-customer', async (req, res) => {
+    const { email, name } = req.body;
+
+    try {
+        const customer = await stripe.customers.create({
+            email,
+            name,
+        });
 
         res.status(200).json({ customerId: customer.id });
     } catch (error) {
@@ -237,71 +249,63 @@ app.post('/create-customer', async (req, res) => {
     }
 });
 
+// Create a Stripe checkout session
 app.post('/create-checkout-session', async (req, res) => {
-    const { customerId, user } = req.body; // Get customer ID (Auth0 sub) and the whole user object
-  
+    const { customerId, user } = req.body;
+
     try {
-      let stripeCustomerId = customerId;  // Use Auth0 sub to identify the user
-  
-      if (!user?.app_metadata?.stripeCustomerId) {
-        // If the user doesn't have a Stripe customer ID, create a new Stripe customer
-        const customer = await stripe.customers.create({
-          email: user.email,  // Use the email from the user object
-          name: user.name,    // Use the name from the user object
+        let stripeCustomerId = customerId;
+
+        if (!user?.app_metadata?.stripeCustomerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.name,
+            });
+
+            stripeCustomerId = customer.id;
+
+            // Store Stripe customer ID in Auth0
+            await updateAuth0User(user.sub, stripeCustomerId);  // Use user.sub (Auth0 user ID)
+        }
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: { name: 'Premium Subscription' },
+                        unit_amount: 999,
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${frontendUrl}/cancel`,
+            customer: stripeCustomerId,
         });
-  
-        // Store the Stripe customer ID in Auth0 (in app_metadata)
-        stripeCustomerId = customer.id;
-  
-        // Update Auth0 user with the new Stripe customer ID
-        await updateAuth0User(customerId, stripeCustomerId);
-      }
 
-      // Now create the Stripe checkout session
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: 'Premium Subscription',
-              },
-              unit_amount: 999, // Price in cents
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'payment',
-        success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${frontendUrl}/cancel`,
-        customer: stripeCustomerId,  // Use the correct Stripe customer ID
-      });
-  
-      res.json({ sessionId: session.id });  // Send session ID back to frontend
+        res.json({ sessionId: session.id });
     } catch (error) {
-      console.error('Error creating checkout session:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
+        console.error('Error creating checkout session:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
-  });
-  
-  
+});
 
-  app.get('/check-subscription/:stripeCustomerId', async (req, res) => {
+// Check subscription status
+app.get('/check-subscription/:stripeCustomerId', async (req, res) => {
     const { stripeCustomerId } = req.params;
-  
+
     try {
-        // Retrieve the customer's subscriptions from Stripe
         const subscriptions = await stripe.subscriptions.list({
             customer: stripeCustomerId,
-            status: 'active',  // You can check for active subscriptions only
+            status: 'active',
             limit: 1
         });
 
-        // Check if the user has any active subscriptions
         const isPremium = subscriptions.data.length > 0;
 
-        // Respond with the subscription status
         res.status(200).json({ isPremium });
     } catch (error) {
         console.error('Error checking subscription:', error.message);
@@ -309,7 +313,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-
+// Protect routes that require premium access
 app.use('/premium/*', (req, res, next) => {
     if (!req.user || !req.user.isPremium) {
         return res.status(403).json({ error: 'Premium features require a subscription.' });
@@ -319,11 +323,12 @@ app.use('/premium/*', (req, res, next) => {
 
 // Test route
 app.get('/test', (req, res) => {
+    console.log('test hit')
     res.send('I\'m working!');
 });
 
 // Start server
-const port = process.env.PORT || 3000; // Heroku sets the PORT env variable, otherwise fallback to 3000 locally
+const port = process.env.PORT || 3000;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
