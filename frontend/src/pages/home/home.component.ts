@@ -19,14 +19,16 @@ export class HomeComponent implements OnInit {
   inputText: string = ''; // The text user inputs for keyword extraction
   keywords: any[] = [];   // Extracted keywords
   isLoading: boolean = false; // Flag to show loading state
-  errorMessage: any = {};  // Error message to display if any issue occurs
+  errorMessage: any = '';  // Error message to display if any issue occurs
   apiUrl = environment.backendUrl; // Backend API URL
   user: any;  // User data from Auth0
   token: any; // User authentication token
   usageLimitReached: boolean = false;  // Flag to track if the user has reached the usage limit
   devMode = true;
+  // Component Class
+  readonly textLimit = 20; // Set a limit for non-registered users
 
-  constructor(private http: HttpClient, private authService: AuthService) {}
+  constructor(private http: HttpClient, private authService: AuthService) { }
 
   ngOnInit(): void {
     this.authService.isAuthenticated()
@@ -61,78 +63,92 @@ export class HomeComponent implements OnInit {
 
 
 
-// Method to handle keyword extraction
-extractKeywords(): void {
-  // Validate input
-  if (!this.inputText.trim()) {
-    this.errorMessage = 'Please enter some text.';
-    return;
+  onInputChange(event: Event): void {
+    const inputElement = event.target as HTMLTextAreaElement;
+
+    // Enforce character limit for non-registered users
+    if (!this.user?.metadata?.isRegistered && inputElement.value.length > this.textLimit) {
+      inputElement.value = inputElement.value.substring(0, this.textLimit);
+      this.errorMessage = `Non-registered users can only enter up to ${this.textLimit} characters.`;
+    } else {
+      this.errorMessage = ''; // Clear error if within limit
+    }
+
+    this.inputText = inputElement.value; // Update the model
   }
 
-  // Check usage limit locally for non-premium users
-  if (!this.user?.metadata?.isRegistered && this.usageLimitReached) {
-    this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
-    return;
-  }
+  // Method to handle keyword extraction
+  extractKeywords(): void {
+    // Validate input
+    if (!this.inputText.trim()) {
+      this.errorMessage = 'Please enter some text.';
+      return;
+    }
 
-  // Set loading state
-  this.isLoading = true;
-  this.errorMessage = '';
+    // Check usage limit locally for non-premium users
+    if (!this.user?.metadata?.isRegistered && this.usageLimitReached) {
+      this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
+      return;
+    }
 
-  // Make the extraction API call
-  this.http.post<any>(`${this.apiUrl}/extract-keywords`, {
-    text: this.inputText,
-    userId: this.user?.sub, // Include user ID for tracking
-  })
-    .pipe(
-      switchMap((response) => {
-        // Update extracted keywords
-        this.keywords = response.keywords;
+    // Set loading state
+    this.isLoading = true;
+    this.errorMessage = '';
 
-        // Handle usage tracking for free users
-        if (!this.user?.metadata?.isRegistered && response.usageCount !== undefined) {
-          this.usageLimitReached = response.usageCount >= this.user?.metadata?.usageLimit;
-          if (this.usageLimitReached) {
-            this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
+    // Make the extraction API call
+    this.http.post<any>(`${this.apiUrl}/extract-keywords`, {
+      text: this.inputText,
+      userId: this.user?.sub, // Include user ID for tracking
+    })
+      .pipe(
+        switchMap((response) => {
+          // Update extracted keywords
+          this.keywords = response.keywords;
+
+          // Handle usage tracking for free users
+          if (!this.user?.metadata?.isRegistered && response.usageCount !== undefined) {
+            this.usageLimitReached = response.usageCount >= this.user?.metadata?.usageLimit;
+            if (this.usageLimitReached) {
+              this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
+            }
           }
-        }
 
-        // Fetch updated user metadata
-        return this.getUserMetadata(this.token, false);
-      })
-    )
-    .subscribe({
-      next: (metadataResponse) => {
-        // Update local user metadata with refreshed data
-        this.user.metadata = metadataResponse.app_metadata;
+          // Fetch updated user metadata
+          return this.getUserMetadata(this.token, false);
+        })
+      )
+      .subscribe({
+        next: (metadataResponse) => {
+          // Update local user metadata with refreshed data
+          this.user.metadata = metadataResponse.app_metadata;
 
-        // Clear loading state
-        this.isLoading = false;
-      },
-      error: (error) => {
-        // Handle errors
-        this.errorMessage = error.error || 'Error extracting keywords.';
-        this.isLoading = false;
-      },
-    });
-} 
-  
+          // Clear loading state
+          this.isLoading = false;
+        },
+        error: (error) => {
+          // Handle errors
+          this.errorMessage = error?.error?.error || 'Error extracting keywords.';
+          this.isLoading = false;
+        },
+      });
+  }
+
 
   // Method to get the user metadata, including usage limits from the server
   getUserMetadata(token: string, trackUsage = true): Observable<any> {
     return this.http.post(`${this.apiUrl}/api/user-metadata`, { token: token, trackUsage: trackUsage })
-    .pipe(map((res: any) => {
-      console.log('res:',res);
-      const metadata = res?.app_metadata;
-      if (metadata) {
-        // Merge metadata (usage limits) into the user object
-        this.user = { ...this.user, ...metadata };
+      .pipe(map((res: any) => {
+        console.log('res:', res);
+        const metadata = res?.app_metadata;
+        if (metadata) {
+          // Merge metadata (usage limits) into the user object
+          this.user = { ...this.user, ...metadata };
 
-        // Check if the user has reached their usage limit
-        this.usageLimitReached = metadata?.usageLimitReached || false;
-      }
-      return metadata;
-    })) // Send user token to the server
+          // Check if the user has reached their usage limit
+          this.usageLimitReached = metadata?.usageLimitReached || false;
+        }
+        return metadata;
+      })) // Send user token to the server
     /**
      * Res looks like:
      * {
