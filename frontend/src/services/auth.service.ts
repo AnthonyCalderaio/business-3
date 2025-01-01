@@ -3,6 +3,7 @@ import { AuthService as Auth0Service } from '@auth0/auth0-angular';
 import { isPlatformBrowser } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { Observable, of } from 'rxjs';
+import { environment } from '../environments/environment';
 
 @Injectable({
   providedIn: 'root',
@@ -33,7 +34,7 @@ export class AuthService {
   /** Logout using Auth0 */
   logout() {
     if (this.isBrowser()) {
-      this.auth0.logout({ logoutParams: { returnTo: 'https://keyword-extractor-plus.netlify.app/login'  } });
+      this.auth0.logout({ logoutParams: { returnTo: `${environment.auth0RedirectUri}/login`  } });
     } else {
       console.warn('Attempted logout in a non-browser environment.');
     }

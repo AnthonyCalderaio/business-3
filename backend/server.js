@@ -4,7 +4,6 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const jwt = require('jsonwebtoken');
 const app = express();
 
 const rateLimit = require('express-rate-limit');
@@ -68,44 +67,108 @@ async function getAuth0ManagementToken() {
     }
 }
 
+/**
+ * Function to track the usage of the app and update the `usageCount` in Auth0's app_metadata.
+ * 
+ * @param {string} userId - The user's unique identifier (sub) from Auth0.
+ * @returns {Promise<number>} The updated usage count.
+ */
+async function trackUsage(userId, shouldIncreaseCounter = true) {
+    try {
+      // Fetch Auth0 Management API token
+      const auth0Token = await getAuth0ManagementToken(); // Function to fetch the Auth0 Management token
+  
+      // Fetch the user from Auth0 to get current app_metadata
+      const url = `https://${auth0Domain}/api/v2/users/${userId}`;
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${auth0Token}`,
+        },
+      });
+  
+      // Get the current usage count from app_metadata, default to 0 if not set
+      let usageCount = response.data.app_metadata?.usageCount || 0;
+  
+      // Define the usage limit (for example, 100 requests per month)
+      const usageLimit = 20;
+  
+      // If the usage limit is exceeded, throw an error
+      if (usageCount >= usageLimit && shouldIncreaseCounter) {
+        throw new Error('Usage limit reached');
+      }
+  
+      // Increment the usage count
+      if(shouldIncreaseCounter){
+        usageCount++;
+      }
+  
+      // Update the app_metadata in Auth0 with the new usage count
+      await axios.patch(
+        `https://${auth0Domain}/api/v2/users/${userId}`,
+        { app_metadata: { usageCount } },
+        {
+          headers: {
+            Authorization: `Bearer ${auth0Token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+  
+      // Return the updated usage count
+      return usageCount;
+    } catch (error) {
+      // Handle errors (e.g., if the usage limit is reached, or API errors)
+      throw new Error(`Error tracking usage: ${error.message}`);
+    }
+  }
+  
 
 // Route to extract keywords
 app.post('/extract-keywords', async (req, res) => {
-    const { text } = req.body;
-
+    const { text, userId } = req.body;
+  
+    // Validate input
     if (!text) {
-        console.log('No text provided.');
-        return res.status(400).json({ error: 'Text input is required.' });
+      return res.status(400).json({ error: 'Text input is required.' });
     }
-
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required.' });
+    }
     if (!GOOGLE_EXTRACTOR_API_KEY) {
-        console.error('Google Extractor API Key is not set.');
-        return res.status(500).json({ error: 'Server configuration error.' });
+      return res.status(500).json({ error: 'Server configuration error.' });
     }
-
+  
     try {
-        const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
-        const response = await axios.post(endpoint, {
-            document: {
-                content: text,
-                type: 'PLAIN_TEXT',
-            },
-        });
-
-        const keywords = response.data.entities
-            .filter(entity => entity.salience > 0.1) // Filter out low salience entities
-            .map(entity => ({
-                name: entity.name,
-                type: entity.type,
-                salience: entity.salience,
-            }));
-
-        res.status(200).json({ success: true, keywords });
+      // Track the user's usage (increment and validate limits)
+      const usageCount = await trackUsage(userId);
+  
+      // Perform the extraction
+      const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
+      const response = await axios.post(endpoint, {
+        document: {
+          content: text,
+          type: 'PLAIN_TEXT',
+        },
+      });
+  
+      // Extract keywords and filter based on salience
+      const keywords = response.data.entities
+        .filter(entity => entity.salience > 0.1)
+        .map(entity => ({
+          name: entity.name,
+          type: entity.type,
+          salience: entity.salience,
+        }));
+  
+      // Return extracted keywords and usage count
+      res.status(200).json({ success: true, keywords, usageCount });
     } catch (error) {
-        console.error('Error analyzing text:', error.response?.data || error.message || 'Unknown error');
-        res.status(500).json({ error: 'Failed to extract keywords.' });
+      if (error.message.includes('Usage limit reached')) {
+        return res.status(403).json({ error: 'Usage limit reached. Upgrade to continue.' });
+      }
+      res.status(500).json({ error: 'Failed to extract keywords.' });
     }
-});
+  });
 
 // Webhook to handle Stripe events
 async function updateAuth0User(auth0Sub, stripeCustomerId) {
@@ -129,11 +192,18 @@ async function updateAuth0User(auth0Sub, stripeCustomerId) {
     }
 }
 
+/**
+ * Endpoint: /api/user-metadata
+ * 
+ * Purpose:
+ * This function retrieves the user's metadata (app_metadata) from Auth0 and tracks their usage.
+ * If the user exceeds their usage limit, they will be blocked.
+ */
 app.post('/api/user-metadata', async (req, res) => {
-    console.log('this got hit')
-    const userToken = req.body.token; // Token sent from frontend
-    console.log(userToken)
-  
+    console.log('API hit: /api/user-metadata'); // Debugging log
+    const userToken = req.body.token; // Token sent from frontend that contains user information.
+    const trackUsageFlag = req.body.trackUsage !== undefined ? req.body.trackUsage : true;
+    
     if (!userToken) {
       return res.status(400).json({ error: 'Token is required' });
     }
@@ -146,20 +216,26 @@ app.post('/api/user-metadata', async (req, res) => {
         return res.status(400).json({ error: 'Invalid token' });
       }
   
-      // Fetch metadata using the Management API
-      const auth0Token = await getAuth0ManagementToken();  // Fetch the token dynamically
+      // Track the user's usage (increment the usageCount and check if the limit is exceeded)
+      const usageCount = await trackUsage(userId, trackUsageFlag);  // Call the trackUsage function
+  
+      // Now fetch the user's metadata from Auth0
+      const auth0Token = await getAuth0ManagementToken();
       const url = `https://${auth0Domain}/api/v2/users/${userId}`;
       const response = await axios.get(url, {
         headers: {
-          Authorization: `Bearer ${auth0Token}`, // Management API token
+          Authorization: `Bearer ${auth0Token}`,
         },
       });
   
-      // Return the app_metadata to the frontend
-      res.status(200).json(response.data.app_metadata);
+      // Return the user's app_metadata along with the updated usage count
+      res.status(200).json({
+        app_metadata: response.data.app_metadata,
+        usageCount: usageCount, // Include updated usage count in the response
+      });
     } catch (error) {
-      console.error('Error fetching metadata:', error.response?.data || error.message);
-      res.status(500).json({ error: 'Failed to fetch metadata' });
+      console.error('Error fetching metadata or tracking usage:', error.message);
+      res.status(500).json({ error: 'Failed to fetch metadata or track usage' });
     }
   });
 
@@ -192,10 +268,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             const user = response.data[0];
             if (user) {
-                // Update isPremium status
+                // Update isRegistered status
                 await axios.patch(
                     `https://${auth0Domain}/api/v2/users/${user.user_id}`,
-                    { app_metadata: { isPremium: true } },
+                    { app_metadata: { isRegistered: true } },
                     {
                         headers: {
                             Authorization: `Bearer ${auth0Token}`,
@@ -204,6 +280,44 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                     }
                 );
                 console.log(`Premium status added to user: ${user.user_id}`);
+            } else {
+                console.error('No Auth0 user found for the given Stripe Customer ID.');
+            }
+        } catch (error) {
+            console.error('Error updating Auth0 user:', error.response?.data || error.message);
+        }
+    } else {
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    if (event.type === 'setup_intent.succeeded') {
+        const setupIntent = event.data.object;
+        const stripeCustomerId = setupIntent.customer;  // Customer ID from the SetupIntent object
+
+        try {
+            // Query Auth0 by Stripe Customer ID
+            const auth0Token = await getAuth0ManagementToken();  // Fetch the token dynamically
+            const url = `https://${auth0Domain}/api/v2/users?q=app_metadata.stripeCustomerId:"${stripeCustomerId}"&search_engine=v3`;
+            const response = await axios.get(url, {
+                headers: {
+                    Authorization: `Bearer ${auth0Token}`,
+                },
+            });
+
+            const user = response.data[0];
+            if (user) {
+                // Update app_metadata with isRegistered: true
+                await axios.patch(
+                    `https://${auth0Domain}/api/v2/users/${user.user_id}`,
+                    { app_metadata: { isRegistered: true } },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${auth0Token}`,
+                            'Content-Type': 'application/json',
+                        },
+                    }
+                );
+                console.log(`isRegistered status added to user: ${user.user_id}`);
             } else {
                 console.error('No Auth0 user found for the given Stripe Customer ID.');
             }
@@ -249,7 +363,44 @@ app.post('/create-customer', async (req, res) => {
     }
 });
 
-// Create a Stripe checkout session
+// Setup Payment upon clicking 'Setup Payment' button
+app.post('/setup-payment-session', async (req, res) => {
+    const { customerId, user } = req.body;
+
+    try {
+        let stripeCustomerId = customerId;
+
+        if (!user?.app_metadata?.stripeCustomerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.name,
+            });
+
+            stripeCustomerId = customer.id;
+
+            // Store Stripe customer ID in Auth0
+            await updateAuth0User(user.sub, stripeCustomerId);  // Use user.sub (Auth0 user ID)
+        }
+
+        // Create a Stripe Checkout Session for payment method setup
+        const session = await stripe.checkout.sessions.create({
+            customer: stripeCustomerId,
+            payment_method_types: ['card'], // The payment method types you support
+            mode: 'setup', // Use 'setup' for saving the payment method, not charging immediately
+            success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${frontendUrl}/cancel`,
+        });
+
+        // Send the session ID back to the frontend
+        res.json({ sessionId: session.id });
+
+    } catch (error) {
+        console.error('Error creating checkout session:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Not currently used
 app.post('/create-checkout-session', async (req, res) => {
     const { customerId, user } = req.body;
 
@@ -304,9 +455,9 @@ app.get('/check-subscription/:stripeCustomerId', async (req, res) => {
             limit: 1
         });
 
-        const isPremium = subscriptions.data.length > 0;
+        const isRegistered = subscriptions.data.length > 0;
 
-        res.status(200).json({ isPremium });
+        res.status(200).json({ isRegistered });
     } catch (error) {
         console.error('Error checking subscription:', error.message);
         res.status(500).json({ error: 'Failed to check subscription.' });
@@ -315,7 +466,7 @@ app.get('/check-subscription/:stripeCustomerId', async (req, res) => {
 
 // Protect routes that require premium access
 app.use('/premium/*', (req, res, next) => {
-    if (!req.user || !req.user.isPremium) {
+    if (!req.user || !req.user.isRegistered) {
         return res.status(403).json({ error: 'Premium features require a subscription.' });
     }
     next();

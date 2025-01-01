@@ -1,5 +1,13 @@
 <div class="container">
     <h1>Keyword Extractor</h1>
+
+    <div *ngIf="devMode">
+      Dev Mode:
+      <span>usageLimitReached: {{usageLimitReached}}</span>
+      <br>
+      <br>
+      <span>User: {{user | json}}</span>
+    </div>
   
     <!-- Input Area -->
     <textarea [(ngModel)]="inputText" placeholder="Paste your content here..." rows="6"></textarea>
@@ -9,7 +17,7 @@
     <div *ngIf="isLoading" class="loading">Extracting keywords...</div>
   
     <!-- Error Message -->
-    <div *ngIf="errorMessage" class="error">{{ errorMessage }}</div>
+    <div *ngIf="errorMessage" class="error">{{ errorMessage?.error }}</div>
   
     <!-- Keywords Table -->
     <table *ngIf="keywords.length > 0">
@@ -32,7 +40,7 @@
   
 
   <div>
-    <div *ngIf="user?.isPremium">Premium Member!</div>
+    <div *ngIf="user?.isRegistered">Premium Member!</div>
     <span (click)="logout()">Logout</span>
-    <app-payments *ngIf="!user?.isPremium" [tokenSub]="token?.sub" [userProfile]="user"></app-payments>
+    <app-payments *ngIf="!user?.isRegistered" [tokenSub]="token?.sub" [userProfile]="user"></app-payments>
   </div>
