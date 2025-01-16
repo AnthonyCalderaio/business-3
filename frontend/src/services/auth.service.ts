@@ -4,11 +4,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { environment } from '../environments/environment';
+import { catchError, map } from 'rxjs/operators';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
+  private accessToken: string | null = null; // In-memory storage for access token
+
   constructor(
     private auth0: Auth0Service,
     @Inject(PLATFORM_ID) private platformId: Object
@@ -34,33 +37,56 @@ export class AuthService {
   /** Logout using Auth0 */
   logout() {
     if (this.isBrowser()) {
-      this.auth0.logout({ logoutParams: { returnTo: `${environment.auth0RedirectUri}/login`  } });
+      this.auth0.logout({
+        logoutParams: { returnTo: `${environment.auth0RedirectUri}/login` },
+      });
     } else {
       console.warn('Attempted logout in a non-browser environment.');
     }
   }
 
   /** Check if user is authenticated */
-  isAuthenticated(): Observable<any> {
+  isAuthenticated(): Observable<boolean> {
     if (this.isBrowser()) {
-      return this.auth0.isAuthenticated$;
+      return this.auth0.isAuthenticated$.pipe(
+        map((auth) => !!auth),
+        catchError(() => of(false)) // Fallback in case of an error
+      );
     }
     console.warn('Authentication check attempted in a non-browser environment.');
-    return of(null);
+    return of(false);
   }
 
-  getUser(): Observable<any>{
-    return this.auth0.user$;
+  /** Retrieve the current user's details */
+  getUser(): Observable<any> {
+    return this.isBrowser() ? this.auth0.user$ : of(null);
   }
 
-  getToken(): Observable<any>{
-    return this.auth0.idTokenClaims$
+  /** Retrieve access token and store it in memory */
+  getToken(): Observable<string | null> {
+    if (!this.isBrowser()) {
+      console.warn('Token retrieval attempted in a non-browser environment.');
+      return of(null);
+    }
+
+    return this.auth0.idTokenClaims$.pipe(
+      map((claims) => {
+        if (claims && claims.__raw) {
+          this.accessToken = claims.__raw; // Cache the token in memory
+          return this.accessToken;
+        }
+        return null;
+      }),
+      catchError((err) => {
+        console.error('Error retrieving token:', err);
+        return of(null);
+      })
+    );
   }
 
   /** Handle Auth0 callback */
   handleAuthCallback() {
     if (this.isBrowser()) {
-      // Ensure that the redirect callback is only handled in the browser
       this.auth0.handleRedirectCallback().subscribe({
         next: () => console.log('Auth0 callback handled.'),
         error: (err) => console.error('Error during Auth0 callback:', err),

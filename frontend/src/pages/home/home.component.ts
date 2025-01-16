@@ -26,7 +26,7 @@ export class HomeComponent implements OnInit {
   usageLimitReached: boolean = false;  // Flag to track if the user has reached the usage limit
   devMode = true;
   // Component Class
-  readonly textLimit = 20; // Set a limit for non-registered users
+  readonly textLimit = 70; // Set a limit for non-registered users
 
   constructor(private http: HttpClient, private authService: AuthService) { }
 
@@ -114,7 +114,7 @@ export class HomeComponent implements OnInit {
           }
 
           // Fetch updated user metadata
-          return this.getUserMetadata(this.token, false);
+          return this.getUserMetadata(this.user, false);
         })
       )
       .subscribe({
