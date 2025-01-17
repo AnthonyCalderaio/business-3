@@ -31,7 +31,7 @@ export class HomeComponent implements OnInit {
   constructor(private http: HttpClient, private authService: AuthService) { }
 
   ngOnInit(): void {
-    this.authService.isAuthenticated()
+    let initialSub = this.authService.isAuthenticated()
       .pipe(
         switchMap((isAuthenticated: boolean) => {
           if (isAuthenticated) {
@@ -58,22 +58,31 @@ export class HomeComponent implements OnInit {
         })
       )
       .subscribe((metadata: any) => {
-      });
+        initialSub.unsubscribe();
+       });
+
+      
+
   }
 
+  private isWithinTextLimit(inputElement: any, event: any) {
+    return this.user?.metadata?.isRegistered && inputElement.value.length > this.textLimit
+  }
+
+  private isWithinUsageLimit() {
+    return this.user?.metadata?.isRegistered && this.usageLimitReached;
+  }
 
 
   onInputChange(event: Event): void {
     const inputElement = event.target as HTMLTextAreaElement;
-
     // Enforce character limit for non-registered users
-    if (!this.user?.metadata?.isRegistered && inputElement.value.length > this.textLimit) {
+    if (!this.isWithinTextLimit(inputElement, event)) {
       inputElement.value = inputElement.value.substring(0, this.textLimit);
       this.errorMessage = `Non-registered users can only enter up to ${this.textLimit} characters.`;
     } else {
       this.errorMessage = ''; // Clear error if within limit
     }
-
     this.inputText = inputElement.value; // Update the model
   }
 
@@ -86,7 +95,7 @@ export class HomeComponent implements OnInit {
     }
 
     // Check usage limit locally for non-premium users
-    if (!this.user?.metadata?.isRegistered && this.usageLimitReached) {
+    if (!this.isWithinUsageLimit()) {
       this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
       return;
     }
@@ -112,6 +121,9 @@ export class HomeComponent implements OnInit {
               this.errorMessage = 'You have reached your free usage limit. Please upgrade to continue.';
             }
           }
+          if (!this.keywords.length) {
+            this.errorMessage = 'No keywords found';
+          }
 
           // Fetch updated user metadata
           return this.getUserMetadata(this.user, false);
@@ -136,9 +148,8 @@ export class HomeComponent implements OnInit {
 
   // Method to get the user metadata, including usage limits from the server
   getUserMetadata(token: string, trackUsage = true): Observable<any> {
-    return this.http.post(`${this.apiUrl}/api/user-metadata`, { token: token, trackUsage: trackUsage })
+    return this.authService.getUserMetadata(`${this.apiUrl}/api/user-metadata`, { token: token, trackUsage: trackUsage })
       .pipe(map((res: any) => {
-        console.log('res:', res);
         const metadata = res?.app_metadata;
         if (metadata) {
           // Merge metadata (usage limits) into the user object

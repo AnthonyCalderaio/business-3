@@ -5,6 +5,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { environment } from '../environments/environment';
 import { catchError, map } from 'rxjs/operators';
+import { HttpClient } from '@angular/common/http';
 
 @Injectable({
   providedIn: 'root',
@@ -14,6 +15,7 @@ export class AuthService {
 
   constructor(
     private auth0: Auth0Service,
+    private http: HttpClient,
     @Inject(PLATFORM_ID) private platformId: Object
   ) {}
 
@@ -94,5 +96,9 @@ export class AuthService {
     } else {
       console.warn('Callback handling attempted in a non-browser environment.');
     }
+  }
+
+  getUserMetadata(url: string, details: any){
+    return this.http.post(url, details);
   }
 }
