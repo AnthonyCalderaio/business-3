@@ -4,8 +4,9 @@ import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
-import { map, Observable, of, switchMap } from 'rxjs';
+import { catchError, map, Observable, of, switchMap, throwError } from 'rxjs';
 import { PaymentsComponent } from '../payments/payments.component';
+import { User } from '../../interfaces/user.interface';
 
 @Component({
   selector: 'app-home',
@@ -21,7 +22,7 @@ export class HomeComponent implements OnInit {
   isLoading: boolean = false; // Flag to show loading state
   errorMessage: any = '';  // Error message to display if any issue occurs
   apiUrl = environment.backendUrl; // Backend API URL
-  user: any;  // User data from Auth0
+  user!: User;  // User data from Auth0
   token: any; // User authentication token
   usageLimitReached: boolean = false;  // Flag to track if the user has reached the usage limit
   devMode = true;
@@ -51,18 +52,18 @@ export class HomeComponent implements OnInit {
         switchMap((token: any) => {
           if (token && this.user) {
             this.token = token;
-            return this.getUserMetadata(token, false); // Get the user metadata to check usage
+            return this.getUserMetadata(this.user, false); // Get the user metadata to check usage
           } else {
             return of(null);
           }
+        }),
+        switchMap((metaData: any) => {
+          return this.getValidPaymentMethod();
         })
       )
-      .subscribe((metadata: any) => {
+      .subscribe((validPaymentMethod: any) => {
         initialSub.unsubscribe();
        });
-
-      
-
   }
 
   private isWithinTextLimit(inputElement: any, event: any) {
@@ -71,6 +72,25 @@ export class HomeComponent implements OnInit {
 
   private isWithinUsageLimit() {
     return this.user?.metadata?.isRegistered && this.usageLimitReached;
+  }
+
+  getValidPaymentMethod(): Observable<any>{
+    return this.http.get(`${this.apiUrl}/payment-method?stripeCustomerId=${this.user.stripeCustomerId}`)
+    .pipe(
+      map((response: any) => {
+        if (response.default_payment_method) {
+          console.log('User has a valid payment method attached.');
+          return response.default_payment_method; // Return the payment method if valid
+        } else {
+          console.log('No payment method attached.');
+          return null; // Indicate no payment method attached
+        }
+      }),
+      catchError((err) => {
+        console.error('Error retrieving payment method:', err);
+        return throwError(() => new Error('Failed to fetch payment method.'));
+      })
+    );
   }
 
 
@@ -103,6 +123,8 @@ export class HomeComponent implements OnInit {
     // Set loading state
     this.isLoading = true;
     this.errorMessage = '';
+
+
 
     // Make the extraction API call
     this.http.post<any>(`${this.apiUrl}/extract-keywords`, {
@@ -147,9 +169,10 @@ export class HomeComponent implements OnInit {
 
 
   // Method to get the user metadata, including usage limits from the server
-  getUserMetadata(token: string, trackUsage = true): Observable<any> {
-    return this.authService.getUserMetadata(`${this.apiUrl}/api/user-metadata`, { token: token, trackUsage: trackUsage })
-      .pipe(map((res: any) => {
+  getUserMetadata(user: User, trackUsage = true): Observable<any> {
+    return this.authService.getUserMetadata(`${this.apiUrl}/api/user-metadata`, { token: user, trackUsage: trackUsage })
+      .pipe(
+        map((res: any) => {
         const metadata = res?.app_metadata;
         if (metadata) {
           // Merge metadata (usage limits) into the user object
@@ -159,7 +182,12 @@ export class HomeComponent implements OnInit {
           this.usageLimitReached = metadata?.usageLimitReached || false;
         }
         return metadata;
-      })) // Send user token to the server
+      }),
+      catchError((err: any) => {
+        console.error('error in getUserMetadata',err)
+        return of({ errorMessage: 'Error in the function: getUserMetadata. ', error:err});
+      })
+    ) // Send user token to the server
     /**
      * Res looks like:
      * {

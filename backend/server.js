@@ -75,107 +75,131 @@ async function getAuth0ManagementToken() {
  */
 async function trackUsage(userId, shouldIncreaseCounter = true) {
     try {
-      // Fetch Auth0 Management API token
-      const auth0Token = await getAuth0ManagementToken(); // Function to fetch the Auth0 Management token
-  
-      // Fetch the user from Auth0 to get current app_metadata
-      const url = `https://${auth0Domain}/api/v2/users/${userId}`;
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${auth0Token}`,
-        },
+        // Fetch Auth0 Management API token
+        const auth0Token = await getAuth0ManagementToken(); // Function to fetch the Auth0 Management token
+
+        // Fetch the user from Auth0 to get current app_metadata
+        const url = `https://${auth0Domain}/api/v2/users/${userId}`;
+        const response = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${auth0Token}`,
+            },
+        });
+
+        // Get the current usage count from app_metadata, default to 0 if not set
+        let usageCount = response.data.app_metadata?.usageCount || 0;
+
+        // Define the usage limit (for example, 100 requests per month)
+        const usageLimit = 20;
+
+        // If the usage limit is exceeded, throw an error
+        if (usageCount >= usageLimit && shouldIncreaseCounter) {
+            throw new Error('Usage limit reached');
+        }
+
+        // Increment the usage count
+        if (shouldIncreaseCounter) {
+            usageCount++;
+        }
+
+        // Update the app_metadata in Auth0 with the new usage count
+        await axios.patch(
+            `https://${auth0Domain}/api/v2/users/${userId}`,
+            { app_metadata: { usageCount } },
+            {
+                headers: {
+                    Authorization: `Bearer ${auth0Token}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        // Return the updated usage count
+        return usageCount;
+    } catch (error) {
+        // Handle errors (e.g., if the usage limit is reached, or API errors)
+        throw new Error(`Error tracking usage: ${error.message}`);
+    }
+}
+
+async function createInvoiceForUser(stripeCustomerId, description, amountInCents) {
+    try {
+      // Create a new invoice item (line item)
+      await stripe.invoiceItems.create({
+        customer: stripeCustomerId,
+        amount: amountInCents, // Charge amount in cents (e.g., $10 = 1000)
+        currency: 'usd',
+        description: description,
       });
   
-      // Get the current usage count from app_metadata, default to 0 if not set
-      let usageCount = response.data.app_metadata?.usageCount || 0;
+      // Create the invoice
+      const invoice = await stripe.invoices.create({
+        customer: stripeCustomerId,
+        auto_advance: true, // Automatically finalize and attempt payment immediately
+      });
   
-      // Define the usage limit (for example, 100 requests per month)
-      const usageLimit = 20;
-  
-      // If the usage limit is exceeded, throw an error
-      if (usageCount >= usageLimit && shouldIncreaseCounter) {
-        throw new Error('Usage limit reached');
-      }
-  
-      // Increment the usage count
-      if(shouldIncreaseCounter){
-        usageCount++;
-      }
-  
-      // Update the app_metadata in Auth0 with the new usage count
-      await axios.patch(
-        `https://${auth0Domain}/api/v2/users/${userId}`,
-        { app_metadata: { usageCount } },
-        {
-          headers: {
-            Authorization: `Bearer ${auth0Token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-  
-      // Return the updated usage count
-      return usageCount;
+      return invoice;
     } catch (error) {
-      // Handle errors (e.g., if the usage limit is reached, or API errors)
-      throw new Error(`Error tracking usage: ${error.message}`);
+      console.error('Error creating invoice:', error);
+      throw new Error('Unable to create invoice');
     }
   }
   
 
+
 // Route to extract keywords
 app.post('/extract-keywords', async (req, res) => {
     const { text, userId } = req.body;
-  
+
     // Validate input
     if (!text) {
-      return res.status(400).json({ error: 'Text input is required.' });
+        return res.status(400).json({ error: 'Text input is required.' });
     }
     if (!userId) {
-      return res.status(400).json({ error: 'User ID is required.' });
+        return res.status(400).json({ error: 'User ID is required.' });
     }
     if (!GOOGLE_EXTRACTOR_API_KEY) {
-      return res.status(500).json({ error: 'Server configuration error.' });
+        return res.status(500).json({ error: 'Server configuration error.' });
     }
-  
+
     try {
-      // Track the user's usage (increment and validate limits)
-      const usageCount = await trackUsage(userId);
-  
-      // Perform the extraction
-      const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
-      const response = await axios.post(endpoint, {
-        document: {
-          content: text,
-          type: 'PLAIN_TEXT',
-        },
-      });
-  
-      // Extract keywords and filter based on salience
-      const keywords = response.data.entities
-        .filter(entity => entity.salience > 0.1)
-        .map(entity => ({
-          name: entity.name,
-          type: entity.type,
-          salience: entity.salience,
-        }));
-  
-      // Return extracted keywords and usage count
-      res.status(200).json({ success: true, keywords, usageCount });
+        // Track the user's usage (increment and validate limits)
+        const usageCount = await trackUsage(userId);
+
+        // Perform the extraction
+        const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
+        const response = await axios.post(endpoint, {
+            document: {
+                content: text,
+                type: 'PLAIN_TEXT',
+            },
+        });
+
+        // Extract keywords and filter based on salience
+        const keywords = response.data.entities
+            .filter(entity => entity.salience > 0.1)
+            .map(entity => ({
+                name: entity.name,
+                type: entity.type,
+                salience: entity.salience,
+            }));
+
+        // Return extracted keywords and usage count
+        res.status(200).json({ success: true, keywords, usageCount });
     } catch (error) {
-      if (error.message.includes('Usage limit reached')) {
-        return res.status(403).json({ error: 'Usage limit reached. Upgrade to continue.' });
-      }
-      res.status(500).json({ error: 'Failed to extract keywords.' });
+        if (error.message.includes('Usage limit reached')) {
+            return res.status(403).json({ error: 'Usage limit reached. Upgrade to continue.' });
+        }
+        res.status(500).json({ error: 'Failed to extract keywords.' });
     }
-  });
+});
 
 // Webhook to handle Stripe events
 async function updateAuth0User(auth0Sub, stripeCustomerId) {
     try {
         const auth0Token = await getAuth0ManagementToken();
         const url = `https://${auth0Domain}/api/v2/users/${auth0Sub}`;
-        
+
         const response = await axios.patch(url, {
             app_metadata: {
                 stripeCustomerId: stripeCustomerId  // Save the Stripe customer ID
@@ -203,41 +227,66 @@ app.post('/api/user-metadata', async (req, res) => {
     console.log('API hit: /api/user-metadata'); // Debugging log
     const userToken = req.body.token; // Token sent from frontend that contains user information.
     const trackUsageFlag = req.body.trackUsage !== undefined ? req.body.trackUsage : true;
-    
+
     if (!userToken) {
-      return res.status(400).json({ error: 'Token is required' });
+        return res.status(400).json({ error: 'Token is required' });
     }
-  
+
     try {
-      // Decode the user token to extract user ID (sub)
-      const userId = userToken.sub;
-  
-      if (!userId) {
-        return res.status(400).json({ error: 'Invalid token' });
-      }
-  
-      // Track the user's usage (increment the usageCount and check if the limit is exceeded)
-      const usageCount = await trackUsage(userId, trackUsageFlag);  // Call the trackUsage function
-  
-      // Now fetch the user's metadata from Auth0
-      const auth0Token = await getAuth0ManagementToken();
-      const url = `https://${auth0Domain}/api/v2/users/${userId}`;
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${auth0Token}`,
-        },
-      });
-  
-      // Return the user's app_metadata along with the updated usage count
-      res.status(200).json({
-        app_metadata: response.data.app_metadata,
-        usageCount: usageCount, // Include updated usage count in the response
-      });
+        // Decode the user token to extract user ID (sub)
+        const userId = userToken.sub;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'Invalid token' });
+        }
+
+        // Track the user's usage (increment the usageCount and check if the limit is exceeded)
+        const usageCount = await trackUsage(userId, trackUsageFlag);  // Call the trackUsage function
+
+        // Now fetch the user's metadata from Auth0
+        const auth0Token = await getAuth0ManagementToken();
+        const url = `https://${auth0Domain}/api/v2/users/${userId}`;
+        const response = await axios.get(url, {
+            headers: {
+                Authorization: `Bearer ${auth0Token}`,
+            },
+        });
+
+        // Return the user's app_metadata along with the updated usage count
+        res.status(200).json({
+            app_metadata: response.data.app_metadata,
+            usageCount: usageCount, // Include updated usage count in the response
+        });
     } catch (error) {
-      console.error('Error fetching metadata or tracking usage:', error.message);
-      res.status(500).json({ error: 'Failed to fetch metadata or track usage' });
+        console.error('Error fetching metadata or tracking usage:', error.message);
+        res.status(500).json({ error: 'Failed to fetch metadata or track usage' });
     }
-  });
+});
+
+app.get('/payment-method', async (req, res) => {
+    try {
+        const customerId = req.query.stripeCustomerId; // Assume you pass the customer ID as a query parameter
+        if (!customerId) {
+            return res.status(400).json({ error: 'Customer ID is required' });
+        }
+
+        // Retrieve the Stripe customer details
+        const customer = await stripe.customers.retrieve(customerId);
+
+        // Check for a default payment method
+        if (customer.invoice_settings.default_payment_method) {
+            const paymentMethod = await stripe.paymentMethods.retrieve(
+                customer.invoice_settings.default_payment_method
+            );
+            res.json({ default_payment_method: paymentMethod });
+        } else {
+            res.json({ default_payment_method: null });
+        }
+    } catch (error) {
+        console.error('Error fetching payment method:', error);
+        res.status(500).json({ error: 'Failed to fetch payment method' });
+    }
+});
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -252,9 +301,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         return res.status(400).send(`Webhook error: ${err.message}`);
     }
 
+
     if (event.type === 'checkout.session.completed') {
-        const session = event.data.object;
-        const stripeCustomerId = session.customer;
+
+    }
+
+    if (event.type === 'payment_method.attached') {
+        const paymentMethod = event.data.object; // The attached payment method
+        const stripeCustomerId = paymentMethod.customer; // Customer ID from the payment method
+        const paymentMethodId = paymentMethod.id; // Payment method ID
 
         try {
             // Query Auth0 by Stripe Customer ID
@@ -279,7 +334,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                         },
                     }
                 );
-                console.log(`Premium status added to user: ${user.user_id}`);
+
+                // Set card as default payment method
+                await stripe.customers.update(stripeCustomerId, {
+                    invoice_settings: {
+                        default_payment_method: paymentMethodId, // Use the payment method ID here
+                    },
+                });
+                console.log(`User payment is now registered and set payment as default: ${user.user_id}`);
             } else {
                 console.error('No Auth0 user found for the given Stripe Customer ID.');
             }
@@ -324,7 +386,27 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         } catch (error) {
             console.error('Error updating Auth0 user:', error.response?.data || error.message);
         }
-    } else {
+    }
+
+    // Handle successful payment
+    if (event.type === 'invoice.payment_succeeded') {
+        const invoice = event.data.object;
+        console.log(`Payment for invoice ${invoice.id} succeeded.`);
+        // Process the user's request (e.g., text extraction)
+        processUserRequest(invoice.customer);
+    }
+
+    // Handle failed payment
+    if (event.type === 'invoice.payment_failed') {
+        const invoice = event.data.object;
+        console.log(`Payment for invoice ${invoice.id} failed.`);
+        // Notify the user or retry payment
+        handleFailedPayment(invoice.customer);
+    }
+
+
+
+    else {
         console.log(`Unhandled event type ${event.type}`);
     }
 
