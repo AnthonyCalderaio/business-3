@@ -124,32 +124,63 @@ async function trackUsage(userId, shouldIncreaseCounter = true) {
 
 async function createInvoiceForUser(stripeCustomerId, description, amountInCents) {
     try {
-      // Create a new invoice item (line item)
-      await stripe.invoiceItems.create({
-        customer: stripeCustomerId,
-        amount: amountInCents, // Charge amount in cents (e.g., $10 = 1000)
-        currency: 'usd',
-        description: description,
-      });
-  
-      // Create the invoice
-      const invoice = await stripe.invoices.create({
-        customer: stripeCustomerId,
-        auto_advance: true, // Automatically finalize and attempt payment immediately
-      });
-  
-      return invoice;
+        
+
+        // Create the invoice, now the created invoice item should be automatically included
+        const invoice = await stripe.invoices.create({
+            customer: stripeCustomerId,
+            auto_advance: true, // Automatically finalize and attempt payment immediately
+        });
+
+        // Create a new invoice item (line item)
+        const invoiceItem = await stripe.invoiceItems.create({
+            customer: stripeCustomerId,
+            amount: amountInCents, // Charge amount in cents (e.g., $10 = 1000)
+            currency: 'usd',
+            description: description,
+            invoice:invoice.id
+        });
+        
+
+        // Finalize the invoice (make sure the invoice is finalized)
+        const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
+
+        // Return the finalized invoice
+        return finalizedInvoice;
     } catch (error) {
-      console.error('Error creating invoice:', error);
-      throw new Error('Unable to create invoice');
+        console.error('Error creating invoice:', error);
+        throw new Error('Unable to create invoice');
     }
-  }
-  
+}
+
+
+
+
+async function getValidPaymentMethod(stripeCustomerId) {
+    try {
+        // Retrieve the Stripe customer details
+        const customer = await stripe.customers.retrieve(stripeCustomerId);
+
+        // Check for a default payment method
+        if (customer.invoice_settings.default_payment_method) {
+            const paymentMethod = await stripe.paymentMethods.retrieve(
+                customer.invoice_settings.default_payment_method
+            );
+            return { default_payment_method: paymentMethod };
+        } else {
+            return { default_payment_method: null };
+        }
+    } catch (error) {
+        console.error('Error fetching payment method:', error);
+        throw new Error('Failed to fetch payment method');
+    }
+}
 
 
 // Route to extract keywords
 app.post('/extract-keywords', async (req, res) => {
-    const { text, userId } = req.body;
+    const { text, user, isRegistered } = req.body;
+    userId = user.sub;
 
     // Validate input
     if (!text) {
@@ -163,10 +194,27 @@ app.post('/extract-keywords', async (req, res) => {
     }
 
     try {
-        // Track the user's usage (increment and validate limits)
-        const usageCount = await trackUsage(userId);
+        // Only charge if user is registered (i.e., premium user)
+        if (isRegistered) {
+            // Calculate charge based on text length (per character)
+            const charCount = text.length;
+            const chargePerCharacter = 0.01; // Example charge: $0.01 per 100 characters
+            const amountInCents = Math.ceil((charCount / 100) * chargePerCharacter * 100); // Charge in cents
 
-        // Perform the extraction
+            // Check if the user has a valid payment method
+            const paymentMethod = await getValidPaymentMethod(user.stripeCustomerId);
+            if (!paymentMethod) {
+                return res.status(400).json({ error: 'No valid payment method found.' });
+            }
+
+            // Create an invoice and charge the user
+            const chargeResponse = await createInvoiceForUser(user.stripeCustomerId, 'Text extraction service', amountInCents);
+            if (!chargeResponse || chargeResponse.error) {
+                return res.status(500).json({ error: 'Failed to create invoice or charge user.' });
+            }
+        }
+
+        // Perform the keyword extraction regardless of whether the user is free or premium
         const endpoint = `https://language.googleapis.com/v1/documents:analyzeEntities?key=${GOOGLE_EXTRACTOR_API_KEY}`;
         const response = await axios.post(endpoint, {
             document: {
@@ -184,15 +232,13 @@ app.post('/extract-keywords', async (req, res) => {
                 salience: entity.salience,
             }));
 
-        // Return extracted keywords and usage count
-        res.status(200).json({ success: true, keywords, usageCount });
+        // Return extracted keywords
+        res.status(200).json({ success: true, keywords });
     } catch (error) {
-        if (error.message.includes('Usage limit reached')) {
-            return res.status(403).json({ error: 'Usage limit reached. Upgrade to continue.' });
-        }
         res.status(500).json({ error: 'Failed to extract keywords.' });
     }
 });
+
 
 // Webhook to handle Stripe events
 async function updateAuth0User(auth0Sub, stripeCustomerId) {
@@ -270,20 +316,13 @@ app.get('/payment-method', async (req, res) => {
             return res.status(400).json({ error: 'Customer ID is required' });
         }
 
-        // Retrieve the Stripe customer details
-        const customer = await stripe.customers.retrieve(customerId);
+        // Call the reusable function to get the valid payment method
+        const result = await getValidPaymentMethod(customerId);
 
-        // Check for a default payment method
-        if (customer.invoice_settings.default_payment_method) {
-            const paymentMethod = await stripe.paymentMethods.retrieve(
-                customer.invoice_settings.default_payment_method
-            );
-            res.json({ default_payment_method: paymentMethod });
-        } else {
-            res.json({ default_payment_method: null });
-        }
+        // Return the payment method details in the response
+        res.json(result);
     } catch (error) {
-        console.error('Error fetching payment method:', error);
+        console.error('Error in /payment-method endpoint:', error);
         res.status(500).json({ error: 'Failed to fetch payment method' });
     }
 });
@@ -393,7 +432,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         const invoice = event.data.object;
         console.log(`Payment for invoice ${invoice.id} succeeded.`);
         // Process the user's request (e.g., text extraction)
-        processUserRequest(invoice.customer);
+        // processUserRequest(invoice.customer);
     }
 
     // Handle failed payment

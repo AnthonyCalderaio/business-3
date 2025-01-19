@@ -3,13 +3,13 @@ export interface User {
     email_verified:boolean,
     family_name:string,
     given_name:string,
-    isRegistered:boolean,
+    isRegistered?:boolean,
     name:string,
     nickname:string,
     picture:string,
     stripeCustomerId:string,
     sub:string,
     updated_at:string,
-    usageCount:number,
+    usageCount?:number,
     metadata?: any
 }

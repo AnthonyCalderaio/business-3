@@ -71,7 +71,9 @@ export class HomeComponent implements OnInit {
   }
 
   private isWithinUsageLimit() {
-    return this.user?.metadata?.isRegistered && this.usageLimitReached;
+    return !this.usageLimitReached ||
+    !this.user.isRegistered;
+
   }
 
   getValidPaymentMethod(): Observable<any>{
@@ -129,7 +131,8 @@ export class HomeComponent implements OnInit {
     // Make the extraction API call
     this.http.post<any>(`${this.apiUrl}/extract-keywords`, {
       text: this.inputText,
-      userId: this.user?.sub, // Include user ID for tracking
+      user: this.user, // Include user ID for tracking
+      isRegistered: this.user?.isRegistered
     })
       .pipe(
         switchMap((response) => {

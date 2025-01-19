@@ -9,6 +9,7 @@
 
 # Payments
 - To simulate payments, use a test card provided by Stripe (e.g., `4242 4242 4242 4242` with any future expiry date and CVC).
+- To test stripe webhooks locally, do the stripe CLI listen call and run the app normally.
 
 # Auth0
 
