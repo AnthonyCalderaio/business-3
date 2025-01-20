@@ -204,4 +204,8 @@ export class HomeComponent implements OnInit {
     this.authService.logout(); // Handle user logout
   }
 
+  updateAccountInfo(){
+    window.location.href = "https://billing.stripe.com/p/login/test_5kA5lu7e1fMJcuI144";
+  }
+
 }

@@ -1,10 +1,18 @@
 require('dotenv').config(); // Load environment variables from .env file
 
+
+const { createClient } = require('@supabase/supabase-js');
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
+
+// Supabase
+const supabaseUrl = 'https://bqlpkwrnbnkaetaajxcw.supabase.co'
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey)
+
 
 const rateLimit = require('express-rate-limit');
 
@@ -124,7 +132,6 @@ async function trackUsage(userId, shouldIncreaseCounter = true) {
 
 async function createInvoiceForUser(stripeCustomerId, description, amountInCents) {
     try {
-        
 
         // Create the invoice, now the created invoice item should be automatically included
         const invoice = await stripe.invoices.create({
@@ -138,9 +145,8 @@ async function createInvoiceForUser(stripeCustomerId, description, amountInCents
             amount: amountInCents, // Charge amount in cents (e.g., $10 = 1000)
             currency: 'usd',
             description: description,
-            invoice:invoice.id
+            invoice: invoice.id
         });
-        
 
         // Finalize the invoice (make sure the invoice is finalized)
         const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -261,6 +267,34 @@ async function updateAuth0User(auth0Sub, stripeCustomerId) {
         console.error('Error updating Auth0 user:', error.response?.data || error.message);
     }
 }
+
+// User limit threshold
+const USER_LIMIT = 10;
+
+// Check if the user limit has been reached
+app.get('/user-count', async (req, res) => {
+    try {
+        // Fetch the user_subs array from the user_count table
+        const { data, error } = await supabase
+            .from('users') // Access the 'users' table
+            .select('auth_sub', { count: 'exact' }); // Count the rows based on the 'auth_sub' column
+
+        if (error) {
+            console.error('Error fetching user count:', error);
+            return res.status(500).json({ success: false, message: 'Failed to fetch user count' });
+        }
+
+        // Get the user_subs array, if it exists
+        const userCount = data?.length | 0;
+
+        // Respond with the user count
+        return res.json({ success: true, userCount });
+
+    } catch (err) {
+        console.error('Error in /check-user-count route:', err);
+        return res.status(500).json({ success: false, message: 'Internal error' });
+    }
+});
 
 /**
  * Endpoint: /api/user-metadata

@@ -1,31 +1,44 @@
 <div class="container">
-  <span *ngIf="user?.name" style="display: flex;">Welcome: {{user.name}}</span>
-    <h1>Keyword Extractor2</h1>
-
-    <div *ngIf="devMode">
-      Dev Mode:
-      <span>usageLimitReached: {{usageLimitReached}}</span>
-      <br>
-      <br>
-      <span>User: {{user | json}}</span>
+  <header>
+    <h1>Keyword Extractor</h1>
+    <div class="user-info" *ngIf="user?.name">
+      <span>Welcome, {{ user.name }}</span>
+      <button class="btn-logout" (click)="logout()">Logout</button>
     </div>
-  
-    <!-- Input Area -->
+  </header>
+
+  <section class="billing">
+    <div *ngIf="user?.isRegistered" class="billing-info">
+      <p>Your billing is set up</p>
+      <button class="btn-update" (click)="updateAccountInfo()">Update Account Info</button>
+    </div>
+    <app-payments 
+      *ngIf="!user?.isRegistered" 
+      [tokenSub]="token?.sub" 
+      [userProfile]="user">
+    </app-payments>
+  </section>
+
+  <section class="keyword-extractor">
     <textarea 
       [(ngModel)]="inputText" 
       (input)="onInputChange($event)"
       placeholder="Paste your content here..." 
-      rows="6"></textarea>
-    <button (click)="extractKeywords()" [disabled]="isLoading">Extract Keywords</button>
-  
-    <!-- Loading State -->
+      rows="6">
+    </textarea>
+    <button 
+      class="btn-primary" 
+      (click)="extractKeywords()" 
+      [disabled]="isLoading">
+      Extract Keywords
+    </button>
+
     <div *ngIf="isLoading" class="loading">Extracting keywords...</div>
-  
-    <!-- Error Message -->
     <div *ngIf="errorMessage" class="error">{{ errorMessage }}</div>
-  
-    <!-- Keywords Table -->
-    <table *ngIf="keywords.length > 0">
+  </section>
+
+  <section class="keywords-table" *ngIf="keywords.length > 0">
+    <table>
       <thead>
         <tr>
           <th>Keyword</th>
@@ -41,11 +54,26 @@
         </tr>
       </tbody>
     </table>
-  </div>
-  
+  </section>
 
-  <div>
-    <div *ngIf="user?.isRegistered">Premium Member!</div>
-    <span (click)="logout()">Logout</span>
-    <app-payments *ngIf="!user?.isRegistered" [tokenSub]="token?.sub" [userProfile]="user"></app-payments>
-  </div>
+  <section *ngIf="devMode" class="dev-info">
+    <p>Dev Mode:</p>
+    <span>usageLimitReached: {{ usageLimitReached }}</span>
+    <br />
+    <pre>{{ user | json }}</pre>
+  </section>
+</div>
+<div class="container">
+  <!-- Existing Content -->
+
+  <!-- Help & Support Section -->
+  <footer class="help-support">
+    <h2>Need Help?</h2>
+    <p>If you have any questions, need assistance, or want to suggest improvements, feel free to reach out to us:</p>
+    <ul>
+      <!-- <li>Email: <a href="mailto:support@keywordextractor.com">support@keywordextractor.com</a></li> -->
+      <li>Phone: <a href="tel:+1234567890">+1 (267) 410-2791</a></li>
+      <li>Feedback: <a href="entityapi@gmail.com" target="_blank">Suggest an Improvement at: entityapiatgmail.com</a></li>
+    </ul>
+  </footer>
+</div>
