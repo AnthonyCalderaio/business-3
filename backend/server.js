@@ -269,32 +269,39 @@ async function updateAuth0User(auth0Sub, stripeCustomerId) {
 }
 
 // User limit threshold
-const USER_LIMIT = 10;
+const USER_LIMIT = 3;
 
 // Check if the user limit has been reached
 app.get('/user-count', async (req, res) => {
     try {
-        // Fetch the user_subs array from the user_count table
+        const userCount = await getUserCount(); // Call the reusable function
+        return res.json({ success: true, userCount });
+    } catch (err) {
+        console.error('Error in /user-count route:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+async function getUserCount() {
+    try {
+        // Fetch user count from the 'users' table
         const { data, error } = await supabase
-            .from('users') // Access the 'users' table
-            .select('auth_sub', { count: 'exact' }); // Count the rows based on the 'auth_sub' column
+            .from('users')
+            .select('auth_sub', { count: 'exact' });
 
         if (error) {
             console.error('Error fetching user count:', error);
-            return res.status(500).json({ success: false, message: 'Failed to fetch user count' });
+            throw new Error('Failed to fetch user count');
         }
 
-        // Get the user_subs array, if it exists
-        const userCount = data?.length | 0;
-
-        // Respond with the user count
-        return res.json({ success: true, userCount });
+        // Get the user count
+        return data?.length || 0; // Ensure we return 0 if no data
 
     } catch (err) {
-        console.error('Error in /check-user-count route:', err);
-        return res.status(500).json({ success: false, message: 'Internal error' });
+        console.error('Error in getUserCount function:', err);
+        throw new Error('Internal error while fetching user count');
     }
-});
+}
 
 /**
  * Endpoint: /api/user-metadata
@@ -393,10 +400,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                     Authorization: `Bearer ${auth0Token}`,
                 },
             });
-
-            const user = response.data[0];
+    
+            const user = response.data[0]; // Fetch the user
             if (user) {
-                // Update isRegistered status
+
+                // If the user exists, update their payment status in Auth0
                 await axios.patch(
                     `https://${auth0Domain}/api/v2/users/${user.user_id}`,
                     { app_metadata: { isRegistered: true } },
@@ -407,19 +415,34 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                         },
                     }
                 );
-
+    
+                // Insert the user into Supabase if they don't already exist
+                const { data, error } = await supabase
+                    .from('users')
+                    .upsert([
+                        {
+                            auth_sub: user.user_id, // Auth0 user ID
+                        },
+                    ]);
+    
+                if (error) {
+                    console.error('Error inserting user into Supabase:', error);
+                    return res.status(500).json({ error: 'Failed to add user to database.' });
+                }
+    
                 // Set card as default payment method
                 await stripe.customers.update(stripeCustomerId, {
                     invoice_settings: {
                         default_payment_method: paymentMethodId, // Use the payment method ID here
                     },
                 });
+
                 console.log(`User payment is now registered and set payment as default: ${user.user_id}`);
             } else {
                 console.error('No Auth0 user found for the given Stripe Customer ID.');
             }
         } catch (error) {
-            console.error('Error updating Auth0 user:', error.response?.data || error.message);
+            console.error('Error updating Auth0 user or adding to Supabase:', error.response?.data || error.message);
         }
     } else {
         console.log(`Unhandled event type ${event.type}`);
