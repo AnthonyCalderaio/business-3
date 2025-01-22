@@ -1,5 +1,0 @@
-# Serve index.html for all other routes (needed for Angular app routing)
-*/index.html    200
-
-# Redirect from / to /home
-/    /home    301!
