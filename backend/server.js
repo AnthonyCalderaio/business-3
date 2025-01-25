@@ -27,6 +27,7 @@ const auth0ClientSecret = process.env.AUTH0_CLIENT_SECRET;
 // CORS setup
 const allowedOrigins = [
     'https://keyword-extractor-plus.netlify.app', // Your Netlify URL
+    'https://seoextraction.com',
     'http://localhost:4200', // Local testing URL (if you're working locally)
 ];
 
