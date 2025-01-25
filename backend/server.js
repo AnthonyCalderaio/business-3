@@ -99,7 +99,7 @@ async function trackUsage(userId, shouldIncreaseCounter = true) {
         let usageCount = response.data.app_metadata?.usageCount || 0;
 
         // Define the usage limit (for example, 100 requests per month)
-        const usageLimit = 20;
+        const usageLimit = 5;
 
         // If the usage limit is exceeded, throw an error
         if (usageCount >= usageLimit && shouldIncreaseCounter) {
@@ -219,6 +219,15 @@ app.post('/extract-keywords', async (req, res) => {
             if (!chargeResponse || chargeResponse.error) {
                 return res.status(500).json({ error: 'Failed to create invoice or charge user.' });
             }
+        }
+        else {
+            try {
+                const usageCount = await trackUsage(userId, true); 
+            } catch (error){
+                res.status(500).json({ error: error.message });
+            }
+            
+
         }
 
         // Perform the keyword extraction regardless of whether the user is free or premium
