@@ -25,7 +25,7 @@ export class HomeComponent implements OnInit {
   user!: User;  // User data from Auth0
   token: any; // User authentication token
   usageLimitReached: boolean = false;  // Flag to track if the user has reached the usage limit
-  devMode = false;
+  devMode = true;
   // Component Class
   readonly textLimit = 70; // Set a limit for non-registered users
 
