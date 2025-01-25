@@ -34,7 +34,7 @@ export const appConfig: ApplicationConfig = {
       domain: environment.auth0Domain,       // Auth0 domain
       clientId: environment.auth0ClientId,   // Auth0 client ID
       authorizationParams: {
-        redirect_uri: environment.auth0RedirectUri || window?.location.origin || 'localhost:4200', // Redirect URI
+        redirect_uri: (environment.auth0RedirectUri + '/home' || window?.location.origin || 'localhost:4200'), // Redirect URI
       },
       cacheLocation: 'localstorage',         // Store tokens in localStorage for persistence
       useRefreshTokens: true,                // Enable refresh token rotation for security

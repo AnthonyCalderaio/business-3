@@ -570,6 +570,7 @@ app.post('/setup-payment-session', async (req, res) => {
             await updateAuth0User(user.sub, stripeCustomerId);  // Use user.sub (Auth0 user ID)
         }
 
+
         // Create a Stripe Checkout Session for payment method setup
         const session = await stripe.checkout.sessions.create({
             customer: stripeCustomerId,
@@ -580,7 +581,7 @@ app.post('/setup-payment-session', async (req, res) => {
         });
 
         // Send the session ID back to the frontend
-        res.json({ sessionId: session.id });
+        res.json({ sessionId: session.id, success:`${frontendUrl}/home` });
 
     } catch (error) {
         console.error('Error creating checkout session:', error);
