@@ -1,0 +1,16 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+      "outDir": "./dist/frontend-server",
+      "module": "commonjs",
+      "target": "es2015",
+      "moduleResolution": "node",
+      "esModuleInterop": true,
+      "types": ["node"]
+    },
+    "include": [
+      "src/**/*.ts",
+      "src/main.server.ts"
+    ]
+  }
+  
