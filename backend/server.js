@@ -576,7 +576,7 @@ app.post('/setup-payment-session', async (req, res) => {
             customer: stripeCustomerId,
             payment_method_types: ['card'], // The payment method types you support
             mode: 'setup', // Use 'setup' for saving the payment method, not charging immediately
-            success_url: `${frontendUrl}/home`,
+            success_url: `${frontendUrl}/success`,
             cancel_url: `${frontendUrl}/cancel`,
         });
 

@@ -33,12 +33,12 @@ export const routes: Routes = [
       component: HomeComponent,
       canActivate: [AuthGuard], // Protect the home route with the AuthGuard
     },
-    {
-      path: '**',
-      redirectTo: 'login', // Redirect to login if no matching routes
-    },
     { 
       path: 'success', 
       component: SuccessComponent 
+    },
+    {
+      path: '**',
+      redirectTo: 'login', // Redirect to login if no matching routes
     },
   ];
