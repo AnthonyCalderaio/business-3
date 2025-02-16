@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { HttpClient } from '@angular/common/http';
 
-declare var Stripe: any; // Declare Stripe as a global variable
+declare var Stripe: any; // Declare Stripe as a global variable 
 
 @Component({
   selector: 'app-payments',
