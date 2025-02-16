@@ -15,6 +15,7 @@ declare var Stripe: any; // Declare Stripe as a global variable
 export class PaymentsComponent {
 
   apiUrl = environment.backendUrl;
+  stripePublishableKey = environment.testPublishableStripeKey;
   @Input() tokenSub: any | undefined;
   @Input() userProfile: any | undefined; 
 
@@ -30,7 +31,7 @@ export class PaymentsComponent {
       })
         .subscribe(
           (session: any) => {
-            const stripe = Stripe('pk_test_51QZ0AuDj4emn7zxBsgePa5u6pljDu874fym798khfLn4Irg6Of0BXuX1Y3CAjn573FB1EemQCA2RIUngUega2ABd00J3rM1bfM');  // Stripe public key
+            const stripe = Stripe(this.stripePublishableKey);  // Stripe public key
             stripe.redirectToCheckout({ sessionId: session.sessionId });
           },
           (error) => {
@@ -50,7 +51,7 @@ export class PaymentsComponent {
       })
         .subscribe(
           (session: any) => {
-            const stripe = Stripe('pk_test_51QZ0AuDj4emn7zxBsgePa5u6pljDu874fym798khfLn4Irg6Of0BXuX1Y3CAjn573FB1EemQCA2RIUngUega2ABd00J3rM1bfM');  // Stripe public key
+            const stripe = Stripe(this.stripePublishableKey);  // Stripe public key
             stripe.redirectToCheckout({ sessionId: session.sessionId });
           },
           (error) => {
