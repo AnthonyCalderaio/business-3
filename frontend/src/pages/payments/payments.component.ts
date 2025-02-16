@@ -15,7 +15,7 @@ declare var Stripe: any; // Declare Stripe as a global variable
 export class PaymentsComponent {
 
   apiUrl = environment.backendUrl;
-  stripePublishableKey = environment.testPublishableStripeKey;
+  stripePublishableKey = environment.production ? environment.publishableStripeKey : environment.testPublishableStripeKey;
   @Input() tokenSub: any | undefined;
   @Input() userProfile: any | undefined; 
 
